@@ -1,15 +1,32 @@
+using DocToSpeech.Core.Extractors;
+using DocToSpeech.Core.Transformers;
+using DocToSpeech.Core.TTS;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// Register extractors
+builder.Services.AddScoped<ITextExtractor, PdfExtractor>();
+builder.Services.AddScoped<ITextExtractor, DocxExtractor>();
+
+// Register transformers
+builder.Services.AddScoped<TextCleaner>();
+builder.Services.AddScoped<TextChunker>();
+
+// Register TTS service
+builder.Services.AddScoped<AzureSpeechService>(provider =>
+{
+    var config = builder.Configuration;
+    var key = config["Azure:SpeechKey"];
+    var region = config["Azure:SpeechRegion"];
+    return new AzureSpeechService(key, region);
+});
 
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -17,9 +34,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();
