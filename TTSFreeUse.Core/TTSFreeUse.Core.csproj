@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <Folder Include="TTS\" />
-    <Folder Include="Transformers\" />
   </ItemGroup>
 
   <ItemGroup>
