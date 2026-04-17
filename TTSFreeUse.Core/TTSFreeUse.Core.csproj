@@ -7,7 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="Extractors\" />
     <Folder Include="TTS\" />
     <Folder Include="Transformers\" />
   </ItemGroup>
