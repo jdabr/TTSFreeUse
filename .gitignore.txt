@@ -1,0 +1,14 @@
+# User secrets
+**/secrets.json
+
+# VS local settings
+.vs/
+*.user
+
+# Build output
+**/bin/
+**/obj/
+
+# Environment files
+*.env
+.env.local
