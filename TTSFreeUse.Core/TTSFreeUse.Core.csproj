@@ -6,4 +6,16 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Folder Include="Extractors\" />
+    <Folder Include="TTS\" />
+    <Folder Include="Transformers\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
+    <PackageReference Include="Microsoft.CognitiveServices.Speech" Version="1.49.1" />
+    <PackageReference Include="PdfPig" Version="0.1.14" />
+  </ItemGroup>
+
 </Project>
