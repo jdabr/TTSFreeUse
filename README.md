@@ -1,24 +1,37 @@
-﻿# DocToSpeech
+﻿# TTSFreeUse
 
-A web app that extracts text from PDF/DOCX files and converts it to speech.
+Turn books and documents into audio. TTSFreeUse extracts the text from a PDF or
+DOCX file, cleans it up for listening, and reads it aloud as an MP3 — handy for
+technical and professional books that have no audiobook edition.
+
+> **Status:** early prototype. Speech currently uses Azure Cognitive Services;
+> a free, offline voice engine is the next planned step.
+
+## Requirements
+
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- An Azure Speech resource (key + region)
 
 ## Setup
 
-1. Clone the repository
-2. Copy `appsettings.example.json` to `appsettings.json`
-3. Right-click `DocToSpeech.Api` → Manage User Secrets
-4. Add your Azure credentials:
-```json
-{
-  "Azure": {
-    "SpeechKey": "your key here",
-    "SpeechRegion": "your region here"
-  }
-}
-```
-5. Run the project — Swagger will open at https://localhost:[port]/swagger
+1. Clone the repository.
+2. Store your Azure credentials as user secrets (they stay out of git):
+   ```sh
+   cd TTSFreeUse.Api
+   dotnet user-secrets set "Azure:SpeechKey" "<your key>"
+   dotnet user-secrets set "Azure:SpeechRegion" "<your region, e.g. eastus>"
+   ```
+   In Visual Studio you can instead right-click `TTSFreeUse.Api` → **Manage User Secrets**.
+3. Run the API:
+   ```sh
+   dotnet run --project TTSFreeUse.Api
+   ```
+4. Open `http://localhost:5138/swagger`, use `POST /api/speech/convert`, and
+   upload a `.pdf` or `.docx` file to get back an MP3.
 
-## Requirements
-- Visual Studio 2022
-- .NET 8 SDK
-- Azure Cognitive Services Speech resource
+## Project layout
+
+| Project | Purpose |
+|---|---|
+| `TTSFreeUse.Core` | Text extraction (PDF, DOCX), cleanup, chunking, and speech synthesis |
+| `TTSFreeUse.Api` | ASP.NET Core web API exposing the conversion endpoint |

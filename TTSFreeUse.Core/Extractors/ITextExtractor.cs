@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DocToSpeech.Core.Extractors
+namespace TTSFreeUse.Core.Extractors
 {
     public interface ITextExtractor
     {

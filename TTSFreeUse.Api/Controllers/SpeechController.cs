@@ -1,9 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using DocToSpeech.Core.Extractors;
-using DocToSpeech.Core.Transformers;
-using DocToSpeech.Core.TTS;
+using TTSFreeUse.Core.Extractors;
+using TTSFreeUse.Core.Transformers;
+using TTSFreeUse.Core.TTS;
 
-namespace DocToSpeech.Api.Controllers
+namespace TTSFreeUse.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
@@ -33,7 +33,7 @@ namespace DocToSpeech.Api.Controllers
                 return BadRequest("No file uploaded.");
 
             // Get file extension
-            var ext = Path.GetExtension(file.FileName).ToLower();
+            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
 
             // Find the right extractor
             var extractor = _extractors.FirstOrDefault(e => e.CanHandle(ext));

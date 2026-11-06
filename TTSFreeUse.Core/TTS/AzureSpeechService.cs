@@ -1,15 +1,21 @@
-﻿using System;
-using Microsoft.CognitiveServices.Speech;
+﻿using Microsoft.CognitiveServices.Speech;
 
-namespace DocToSpeech.Core.TTS
+namespace TTSFreeUse.Core.TTS
 {
     public class AzureSpeechService
     {
         private readonly string _key;
         private readonly string _region;
 
-        public AzureSpeechService(string key, string region)
+        public AzureSpeechService(string? key, string? region)
         {
+            // Fail with a clear message instead of an opaque SDK error on the
+            // first synthesis call.
+            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(region))
+                throw new InvalidOperationException(
+                    "Azure Speech is not configured. Set Azure:SpeechKey and " +
+                    "Azure:SpeechRegion (see README.md).");
+
             _key = key;
             _region = region;
         }

@@ -1,6 +1,6 @@
-using DocToSpeech.Core.Extractors;
-using DocToSpeech.Core.Transformers;
-using DocToSpeech.Core.TTS;
+using TTSFreeUse.Core.Extractors;
+using TTSFreeUse.Core.Transformers;
+using TTSFreeUse.Core.TTS;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,7 +15,7 @@ builder.Services.AddScoped<TextChunker>();
 // Register TTS service
 builder.Services.AddScoped<AzureSpeechService>(provider =>
 {
-    var config = builder.Configuration;
+    var config = provider.GetRequiredService<IConfiguration>();
     var key = config["Azure:SpeechKey"];
     var region = config["Azure:SpeechRegion"];
     return new AzureSpeechService(key, region);
