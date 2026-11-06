@@ -139,14 +139,40 @@ public class NarrationPipelineTests
 public class KokoroEngineTests
 {
     [Fact]
-    public void ListsTheEnglishVoices()
+    public void ListsOnlyTheRecommendedVoicesByDefault()
     {
         using var engine = new KokoroTtsEngine(new KokoroOptions { ModelsDirectory = Path.GetTempPath() });
 
-        Assert.Equal(28, engine.Voices.Count);
+        Assert.Equal(KokoroTtsEngine.RecommendedVoiceIds, engine.Voices.Select(v => v.Id));
         Assert.Contains(engine.Voices, v => v is { Id: "af_heart", Name: "Heart", Language: "en-US", Gender: "female" });
         Assert.Contains(engine.Voices, v => v is { Id: "bm_george", Name: "George", Language: "en-GB", Gender: "male" });
+        Assert.DoesNotContain(engine.Voices, v => v.Id == "am_adam"); // graded F+
         Assert.False(engine.IsReady);
+    }
+
+    [Fact]
+    public void CanListAllEnglishVoices()
+    {
+        using var engine = new KokoroTtsEngine(new KokoroOptions
+        {
+            ModelsDirectory = Path.GetTempPath(),
+            ShowAllVoices = true,
+        });
+
+        Assert.Equal(28, engine.Voices.Count);
+    }
+
+    [Fact]
+    public void ListsAConfiguredDefaultOutsideTheRecommendedSet()
+    {
+        using var engine = new KokoroTtsEngine(new KokoroOptions
+        {
+            ModelsDirectory = Path.GetTempPath(),
+            DefaultVoice = "bm_lewis",
+        });
+
+        Assert.Equal(KokoroTtsEngine.RecommendedVoiceIds.Length + 1, engine.Voices.Count);
+        Assert.Contains(engine.Voices, v => v.Id == "bm_lewis");
     }
 
     [Fact]

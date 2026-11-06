@@ -11,6 +11,13 @@ namespace TTSFreeUse.Core.TTS.Kokoro
 
         /// <summary>CPU threads for synthesis; 0 = choose automatically.</summary>
         public int Threads { get; set; }
+
+        /// <summary>
+        /// List all 28 English voices instead of only the most natural-sounding
+        /// ones. The lower-graded voices are trained on little audio and can
+        /// sound robotic or mispronounce words.
+        /// </summary>
+        public bool ShowAllVoices { get; set; }
     }
 
     /// <summary>
@@ -30,13 +37,33 @@ namespace TTSFreeUse.Core.TTS.Kokoro
             "bf_emma", "bf_isabella", "bf_lily", "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
         };
 
-        private static readonly IReadOnlyList<TtsVoice> VoiceList = EnglishVoiceIds
-            .Select(id => new TtsVoice(
-                Id: id,
-                Name: char.ToUpperInvariant(id[3]) + id[4..],
-                Language: id[0] == 'b' ? "en-GB" : "en-US",
-                Gender: id[1] == 'f' ? "female" : "male"))
-            .ToList();
+        // The voices shown by default, best first within each accent/gender.
+        // Based on the grades in Kokoro's VOICES.md
+        // (https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md), which
+        // reflect how much clean training audio each voice had: we keep C+ and
+        // above, plus George (C) so there is a British male voice.
+        internal static readonly string[] RecommendedVoiceIds =
+        {
+            "af_heart",   // A
+            "af_bella",   // A-
+            "af_nicole",  // B-
+            "af_aoede",   // C+
+            "af_kore",    // C+
+            "af_sarah",   // C+
+            "am_michael", // C+
+            "am_fenrir",  // C+
+            "am_puck",    // C+
+            "bf_emma",    // B-
+            "bm_george",  // C
+        };
+
+        private static TtsVoice ToVoice(string id) => new(
+            Id: id,
+            Name: char.ToUpperInvariant(id[3]) + id[4..],
+            Language: id[0] == 'b' ? "en-GB" : "en-US",
+            Gender: id[1] == 'f' ? "female" : "male");
+
+        private readonly IReadOnlyList<TtsVoice> _voices;
 
         private readonly KokoroModel _model;
         private readonly KokoroOptions _options;
@@ -49,13 +76,21 @@ namespace TTSFreeUse.Core.TTS.Kokoro
         {
             _options = options;
             _model = new KokoroModel(options.ModelsDirectory);
-            if (VoiceList.All(v => v.Id != options.DefaultVoice))
+            if (!EnglishVoiceIds.Contains(options.DefaultVoice))
                 throw new ArgumentException($"Unknown Kokoro voice '{options.DefaultVoice}'.");
+
+            // A configured default outside the recommended set is still listed.
+            var ids = options.ShowAllVoices
+                ? EnglishVoiceIds
+                : RecommendedVoiceIds.Contains(options.DefaultVoice)
+                    ? RecommendedVoiceIds
+                    : RecommendedVoiceIds.Append(options.DefaultVoice).ToArray();
+            _voices = ids.Select(ToVoice).ToList();
         }
 
         public string Name => "kokoro";
         public int SampleRate => 24000;
-        public IReadOnlyList<TtsVoice> Voices => VoiceList;
+        public IReadOnlyList<TtsVoice> Voices => _voices;
         public string DefaultVoice => _options.DefaultVoice;
         public bool IsReady => _tts != null;
         public string Status => _status;

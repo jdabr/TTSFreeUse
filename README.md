@@ -85,9 +85,18 @@ on a 6-core Ryzen 5, so a 10-hour book takes roughly 2 hours.
 
 ## Voices
 
-28 English voices are included — American (`af_*`, `am_*`) and British
-(`bf_*`, `bm_*`), female and male. The default is `af_heart`. Try
-`bf_emma`, `am_michael`, or `bm_george` for variety.
+The voice menu shows the 11 most natural-sounding English voices, using the
+quality grades published by Kokoro's author in
+[VOICES.md](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md):
+
+| Accent | Female | Male |
+|---|---|---|
+| American | Heart (A, default), Bella (A-), Nicole (B-), Aoede, Kore, Sarah (C+) | Michael, Fenrir, Puck (C+) |
+| British | Emma (B-) | George (C) |
+
+The model has 17 more English voices, but they were trained on only a few
+minutes of audio and often sound robotic. To list them anyway, set
+`Tts:Kokoro:ShowAllVoices` to `true`.
 
 ## Configuration
 
@@ -99,7 +108,8 @@ Settings live in `TTSFreeUse.Api/appsettings.json`:
   "Kokoro": {
     "ModelsDirectory": "",
     "DefaultVoice": "af_heart",
-    "Threads": 0
+    "Threads": 0,
+    "ShowAllVoices": false
   }
 }
 ```
