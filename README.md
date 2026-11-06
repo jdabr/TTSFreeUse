@@ -9,7 +9,7 @@ technical and professional books that have no audiobook edition.
 
 ## Requirements
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - An Azure Speech resource (key + region)
 
 ## Setup
@@ -35,3 +35,10 @@ technical and professional books that have no audiobook edition.
 |---|---|
 | `TTSFreeUse.Core` | Text extraction (PDF, DOCX), cleanup, chunking, and speech synthesis |
 | `TTSFreeUse.Api` | ASP.NET Core web API exposing the conversion endpoint |
+
+## License
+
+TTSFreeUse is free and open source under the [MIT License](LICENSE).
+
+Note that the optional Azure Speech SDK (`Microsoft.CognitiveServices.Speech`)
+is distributed by Microsoft under its own license terms, not MIT.
