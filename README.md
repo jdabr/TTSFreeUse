@@ -34,16 +34,49 @@ dotnet run --project TTSFreeUse.Api
 ```
 
 On first run the voice model (~330 MB) downloads automatically — this happens
-once. Then open <http://localhost:5138/swagger> to try it:
+once. Then open <http://localhost:5138>:
+
+- **Paste text → Listen now** to hear it right away.
+- **Save audio file** (or **Upload file**) to turn text or a PDF/DOCX/TXT
+  document into an **MP3** (plays everywhere) or **M4B** (audiobook apps
+  remember your place). Long documents convert in the background with a
+  progress bar.
+- Finished files are saved to **Documents\TTSFreeUse**, where you can play,
+  download, or copy them to your phone.
+
+### Audio converter (FFmpeg)
+
+MP3 and M4B files are made with [FFmpeg](https://ffmpeg.org).
+
+- **Windows:** downloaded automatically the first time you save an MP3/M4B
+  (~110 MB, once). TTSFreeUse downloads a fixed version (9.0.2, from
+  [gyan.dev](https://www.gyan.dev/ffmpeg/builds/)) and verifies its SHA-256
+  checksum before using it.
+- **macOS / Linux:** install it yourself — `brew install ffmpeg` or
+  `sudo apt install ffmpeg` — then restart TTSFreeUse.
+- If you already have FFmpeg installed, TTSFreeUse uses it.
+- WAV output needs nothing extra (but is large: ~170 MB per hour).
+
+### API
+
+The web page uses a small HTTP API, also browsable at
+<http://localhost:5138/swagger>:
 
 | Endpoint | What it does |
 |---|---|
 | `GET /api/speech/status` | Whether the voice model is ready (shows download progress) |
 | `GET /api/speech/voices` | Available voices |
-| `POST /api/speech/convert` | Upload a `.pdf`, `.docx`, or `.txt` file → WAV audio |
-| `POST /api/speech/text` | Send `{ "text": "...", "voice": "bf_emma", "speed": 1.1 }` → WAV audio |
+| `POST /api/speech/text` | Instant: `{ "text": "...", "voice": "bf_emma", "speed": 1.1 }` → WAV audio |
+| `POST /api/speech/convert` | Instant: upload a `.pdf`, `.docx`, or `.txt` file → WAV audio |
+| `POST /api/jobs/text` | Background: `{ "text": "...", "format": "Mp3" }` → job |
+| `POST /api/jobs/file` | Background: upload a document (+ `format`, `voice`, `speed`) → job |
+| `GET /api/jobs`, `GET /api/jobs/{id}` | Job progress and estimated time left |
+| `POST /api/jobs/{id}/cancel` | Cancel a job |
+| `GET /api/library` | Saved audio files |
+| `GET /api/library/{file}` | Play (supports seeking) or `?download=true` |
+| `DELETE /api/library/{file}` | Delete a saved file |
 
-`voice` and `speed` (0.5–2.0) are optional on both conversion endpoints.
+`voice`, `speed` (0.5–2.0), and `format` (`Mp3`, `M4b`, `Wav`) are optional.
 
 ### Speed
 
@@ -75,6 +108,10 @@ Settings live in `TTSFreeUse.Api/appsettings.json`:
   `%LOCALAPPDATA%\TTSFreeUse\models` on Windows or
   `~/.local/share/TTSFreeUse/models` on Linux/macOS.
 - `Threads` — CPU threads used for speech; `0` picks automatically.
+- `Library:Directory` — where saved audio goes; empty means
+  `Documents\TTSFreeUse`.
+- `Ffmpeg:Path` — use a specific `ffmpeg` executable;
+  `Ffmpeg:AllowDownload` — set to `false` to never download FFmpeg.
 
 ### Optional: Azure cloud voices
 

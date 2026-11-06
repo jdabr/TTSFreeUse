@@ -5,19 +5,23 @@ using TTSFreeUse.Core.TTS;
 
 namespace TTSFreeUse.Api.Controllers
 {
+    /// <summary>
+    /// Instant narration: returns WAV audio directly in the response. Good for
+    /// short text you want to hear right away; use /api/jobs for documents.
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     public class SpeechController : ControllerBase
     {
-        private const long MaxUploadBytes = 200 * 1024 * 1024;
+        internal const long MaxUploadBytes = 200 * 1024 * 1024;
 
         private readonly NarrationPipeline _pipeline;
-        private readonly IEnumerable<ITextExtractor> _extractors;
+        private readonly DocumentReader _reader;
 
-        public SpeechController(NarrationPipeline pipeline, IEnumerable<ITextExtractor> extractors)
+        public SpeechController(NarrationPipeline pipeline, DocumentReader reader)
         {
             _pipeline = pipeline;
-            _extractors = extractors;
+            _reader = reader;
         }
 
         private ITtsEngine Engine => _pipeline.Engine;
@@ -42,29 +46,18 @@ namespace TTSFreeUse.Api.Controllers
             if (file == null || file.Length == 0)
                 return BadRequest("No file uploaded.");
 
-            var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-            var extractor = _extractors.FirstOrDefault(e => e.CanHandle(ext));
-            if (extractor == null)
-                return BadRequest($"Unsupported file type: {ext}. Supported: .pdf, .docx, .txt");
-
             string rawText;
             try
             {
                 await using var stream = file.OpenReadStream();
-                rawText = await extractor.ExtractAsync(stream);
+                rawText = await _reader.ReadAsync(stream, file.FileName);
             }
-            catch (ProtectedDocumentException ex)
+            catch (DocumentReadException ex)
             {
                 return BadRequest(ex.Message);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // Corrupt, truncated, or password-protected files land here.
-                return BadRequest($"Couldn't read this {ext} file. It may be damaged or password-protected.");
-            }
 
-            var name = Path.GetFileNameWithoutExtension(file.FileName);
-            return await NarrateAsync(rawText, voice, speed, name);
+            return await NarrateAsync(rawText, voice, speed, Path.GetFileNameWithoutExtension(file.FileName));
         }
 
         /// <summary>Narrates text typed or pasted by the user and returns a WAV file.</summary>
@@ -75,22 +68,16 @@ namespace TTSFreeUse.Api.Controllers
 
         private async Task<IActionResult> NarrateAsync(string? rawText, string? voice, float speed, string fileName)
         {
-            if (!Engine.IsReady)
-                return StatusCode(StatusCodes.Status503ServiceUnavailable, Engine.Status);
-
-            if (speed is < 0.5f or > 2.0f)
-                return BadRequest("Speed must be between 0.5 and 2.0.");
-
-            // Azure accepts any of its neural voice names; Kokoro only its own.
-            if (voice != null && Engine.Name == "kokoro" && Engine.Voices.All(v => v.Id != voice))
-                return BadRequest($"Unknown voice '{voice}'. See GET /api/speech/voices.");
+            var problem = RequestValidation.Check(Engine, voice, speed);
+            if (problem != null)
+                return problem;
 
             var chunks = _pipeline.Prepare(rawText ?? string.Empty);
             if (chunks.Count == 0)
                 return UnprocessableEntity(
                     "No readable text found. Scanned PDFs (images of pages) aren't supported yet.");
 
-            // Write to a temp file rather than memory: a whole book is hundreds of MB of audio.
+            // Write to a temp file rather than memory: long text is a lot of audio.
             var path = Path.Combine(Path.GetTempPath(), $"ttsfreeuse-{Guid.NewGuid():N}.wav");
             var output = new FileStream(path, FileMode.Create, FileAccess.ReadWrite, FileShare.None,
                 bufferSize: 81920, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
@@ -100,7 +87,7 @@ namespace TTSFreeUse.Api.Controllers
                 await _pipeline.NarrateAsync(chunks, output, new TtsOptions(voice, speed),
                     cancellationToken: HttpContext.RequestAborted);
                 output.Position = 0;
-                return File(output, "audio/wav", SafeFileName(fileName) + ".wav");
+                return File(output, "audio/wav", Core.Jobs.AudioLibrary.SafeName(fileName) + ".wav");
             }
             catch
             {
@@ -108,14 +95,26 @@ namespace TTSFreeUse.Api.Controllers
                 throw;
             }
         }
-
-        private static string SafeFileName(string name)
-        {
-            var invalid = Path.GetInvalidFileNameChars();
-            var safe = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray()).Trim();
-            return safe.Length > 0 ? safe : "narration";
-        }
     }
 
     public record TextRequest(string Text, string? Voice = null, float? Speed = null);
+
+    internal static class RequestValidation
+    {
+        /// <summary>Returns an error response for invalid voice/speed or an engine that isn't ready.</summary>
+        public static IActionResult? Check(ITtsEngine engine, string? voice, float speed)
+        {
+            if (!engine.IsReady)
+                return new ObjectResult(engine.Status) { StatusCode = StatusCodes.Status503ServiceUnavailable };
+
+            if (speed is < 0.5f or > 2.0f)
+                return new BadRequestObjectResult("Speed must be between 0.5 and 2.0.");
+
+            // Azure accepts any of its neural voice names; Kokoro only its own.
+            if (voice != null && engine.Name == "kokoro" && engine.Voices.All(v => v.Id != voice))
+                return new BadRequestObjectResult($"Unknown voice '{voice}'. See GET /api/speech/voices.");
+
+            return null;
+        }
+    }
 }

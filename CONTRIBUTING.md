@@ -33,8 +33,13 @@ headers read aloud, odd pronunciations), it helps a lot to include:
    ```sh
    TTSFREEUSE_MODELS_DIR="$LOCALAPPDATA/TTSFreeUse/models" dotnet test
    ```
-4. Run the API with `dotnet run --project TTSFreeUse.Api` and open
-   <http://localhost:5138/swagger>.
+   Likewise, the FFmpeg conversion tests run only when `TTSFREEUSE_FFMPEG`
+   points at an ffmpeg executable:
+   ```sh
+   TTSFREEUSE_FFMPEG="$LOCALAPPDATA/TTSFreeUse/tools/ffmpeg-9.0.2/ffmpeg.exe" dotnet test
+   ```
+4. Run the app with `dotnet run --project TTSFreeUse.Api` and open
+   <http://localhost:5138> (API docs at `/swagger`).
 
 ## How the code fits together
 

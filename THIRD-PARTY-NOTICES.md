@@ -26,6 +26,18 @@ It uses the following third-party components, each under its own license.
 The model is not stored in this repository; it is downloaded from the
 sherpa-onnx GitHub releases the first time the app runs.
 
+## Audio converter (downloaded on first use, Windows)
+
+| Component | License |
+|---|---|
+| [FFmpeg](https://ffmpeg.org) 9.0.2 "essentials" build by [gyan.dev](https://www.gyan.dev/ffmpeg/builds/), from its [GitHub mirror](https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2) | GPL-3.0 (this build includes GPL components such as libx264) |
+
+FFmpeg is not bundled with TTSFreeUse. It is run as a separate program to
+convert audio. On Windows it is downloaded on first use, its SHA-256 is
+verified, and its `LICENSE` file is kept next to it in
+`%LOCALAPPDATA%\TTSFreeUse\tools`. On macOS and Linux the system's FFmpeg is
+used. FFmpeg's source code is available at <https://ffmpeg.org/download.html>.
+
 ## Note on espeak-ng (GPL-3.0)
 
 espeak-ng is built into the sherpa-onnx native library that TTSFreeUse loads.
