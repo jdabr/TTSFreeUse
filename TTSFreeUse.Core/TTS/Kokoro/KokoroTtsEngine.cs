@@ -1,0 +1,156 @@
+using SherpaOnnx;
+
+namespace TTSFreeUse.Core.TTS.Kokoro
+{
+    public class KokoroOptions
+    {
+        /// <summary>Where models are stored; empty = per-user default folder.</summary>
+        public string? ModelsDirectory { get; set; }
+
+        public string DefaultVoice { get; set; } = "af_heart";
+
+        /// <summary>CPU threads for synthesis; 0 = choose automatically.</summary>
+        public int Threads { get; set; }
+    }
+
+    /// <summary>
+    /// Free, offline text-to-speech using the Kokoro-82M model (Apache-2.0)
+    /// through sherpa-onnx. Runs on the CPU; no account or internet needed
+    /// after the one-time model download.
+    /// </summary>
+    public sealed class KokoroTtsEngine : ITtsEngine, IDisposable
+    {
+        // Speaker IDs are fixed by the model (see the model's speaker_names
+        // metadata). Phase 1 exposes the English voices, IDs 0-27.
+        private static readonly string[] EnglishVoiceIds =
+        {
+            "af_alloy", "af_aoede", "af_bella", "af_heart", "af_jessica", "af_kore", "af_nicole",
+            "af_nova", "af_river", "af_sarah", "af_sky", "am_adam", "am_echo", "am_eric",
+            "am_fenrir", "am_liam", "am_michael", "am_onyx", "am_puck", "am_santa", "bf_alice",
+            "bf_emma", "bf_isabella", "bf_lily", "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
+        };
+
+        private static readonly IReadOnlyList<TtsVoice> VoiceList = EnglishVoiceIds
+            .Select(id => new TtsVoice(
+                Id: id,
+                Name: char.ToUpperInvariant(id[3]) + id[4..],
+                Language: id[0] == 'b' ? "en-GB" : "en-US",
+                Gender: id[1] == 'f' ? "female" : "male"))
+            .ToList();
+
+        private readonly KokoroModel _model;
+        private readonly KokoroOptions _options;
+        private readonly SemaphoreSlim _initLock = new(1, 1);
+        private readonly SemaphoreSlim _synthLock = new(1, 1);
+        private OfflineTts? _tts;
+        private volatile string _status = "Not started.";
+
+        public KokoroTtsEngine(KokoroOptions options)
+        {
+            _options = options;
+            _model = new KokoroModel(options.ModelsDirectory);
+            if (VoiceList.All(v => v.Id != options.DefaultVoice))
+                throw new ArgumentException($"Unknown Kokoro voice '{options.DefaultVoice}'.");
+        }
+
+        public string Name => "kokoro";
+        public int SampleRate => 24000;
+        public IReadOnlyList<TtsVoice> Voices => VoiceList;
+        public string DefaultVoice => _options.DefaultVoice;
+        public bool IsReady => _tts != null;
+        public string Status => _status;
+        public KokoroModel Model => _model;
+
+        /// <summary>
+        /// Downloads the model if needed (~330 MB, first run only) and loads it.
+        /// Safe to call more than once.
+        /// </summary>
+        public async Task InitializeAsync(CancellationToken cancellationToken = default)
+        {
+            if (_tts != null)
+                return;
+
+            await _initLock.WaitAsync(cancellationToken);
+            try
+            {
+                if (_tts != null)
+                    return;
+
+                if (!_model.IsInstalled())
+                {
+                    _status = "Downloading voice model (first run only)…";
+                    var progress = new Progress<double>(p =>
+                        _status = $"Downloading voice model (first run only): {p:P0}");
+                    await _model.EnsureInstalledAsync(progress, cancellationToken: cancellationToken);
+                }
+
+                _status = "Loading voice model…";
+                _tts = await Task.Run(() => new OfflineTts(BuildConfig()), cancellationToken);
+                _status = "Ready.";
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _status = $"Voice model failed to load: {ex.Message}";
+                throw;
+            }
+            finally
+            {
+                _initLock.Release();
+            }
+        }
+
+        public async Task<float[]> SynthesizeAsync(string text, TtsOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            await InitializeAsync(cancellationToken);
+
+            var voiceId = options.Voice ?? DefaultVoice;
+            var speakerId = Array.IndexOf(EnglishVoiceIds, voiceId);
+            if (speakerId < 0)
+                throw new ArgumentException($"Unknown voice '{voiceId}'.", nameof(options));
+
+            // One synthesis at a time: the model already uses multiple threads,
+            // and running several at once only adds memory pressure.
+            await _synthLock.WaitAsync(cancellationToken);
+            try
+            {
+                return await Task.Run(() =>
+                {
+                    // OfflineTtsGeneratedAudio has Dispose() but isn't IDisposable.
+                    var audio = _tts!.Generate(text, Math.Clamp(options.Speed, 0.5f, 2.0f), speakerId);
+                    try { return audio.Samples; }
+                    finally { audio.Dispose(); }
+                }, cancellationToken);
+            }
+            finally
+            {
+                _synthLock.Release();
+            }
+        }
+
+        private OfflineTtsConfig BuildConfig()
+        {
+            var config = new OfflineTtsConfig();
+            config.Model.Kokoro.Model = _model.ModelFile;
+            config.Model.Kokoro.Voices = _model.VoicesFile;
+            config.Model.Kokoro.Tokens = _model.TokensFile;
+            config.Model.Kokoro.Lexicon = _model.LexiconFile;
+            config.Model.Kokoro.DataDir = _model.EspeakDataDir; // pronunciation fallback for unknown words
+            config.Model.Kokoro.LengthScale = 1.0f;
+            // Measured: speed keeps improving up to ~8 threads, then levels off.
+            config.Model.NumThreads = _options.Threads > 0
+                ? _options.Threads
+                : Math.Clamp(Environment.ProcessorCount * 2 / 3, 1, 8);
+            config.Model.Provider = "cpu";
+            config.MaxNumSentences = 1;
+            return config;
+        }
+
+        public void Dispose()
+        {
+            _tts?.Dispose();
+            _initLock.Dispose();
+            _synthLock.Dispose();
+        }
+    }
+}

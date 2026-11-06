@@ -1,6 +1,18 @@
 @TTSFreeUse.Api_HostAddress = http://localhost:5138
 
-# Upload a PDF or DOCX and save the returned MP3.
+### Is the voice model ready?
+GET {{TTSFreeUse.Api_HostAddress}}/api/speech/status
+
+### List voices
+GET {{TTSFreeUse.Api_HostAddress}}/api/speech/voices
+
+### Narrate text
+POST {{TTSFreeUse.Api_HostAddress}}/api/speech/text
+Content-Type: application/json
+
+{ "text": "Hello! This is free, offline text to speech.", "voice": "bf_emma", "speed": 1.0 }
+
+### Narrate a file (PDF, DOCX, or TXT)
 POST {{TTSFreeUse.Api_HostAddress}}/api/speech/convert
 Content-Type: multipart/form-data; boundary=boundary
 

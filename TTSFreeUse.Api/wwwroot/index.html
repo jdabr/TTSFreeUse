@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TTSFreeUse</title>
+<style>
+  :root {
+    --bg: #f7f6f3; --panel: #ffffff; --text: #1f2328; --muted: #656d76;
+    --border: #d8dee4; --accent: #2f6f5e; --accent-text: #ffffff; --error: #b42318;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161a1d; --panel: #1f2428; --text: #e6edf3; --muted: #9198a1;
+      --border: #3a4148; --accent: #4fae94; --accent-text: #0d1117; --error: #ff7b72;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin: 0 0 24px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tabs button {
+    background: none; border: 1px solid transparent; color: var(--muted);
+    padding: 6px 14px; border-radius: 6px; font: inherit; cursor: pointer;
+  }
+  .tabs button[aria-selected="true"] { border-color: var(--border); color: var(--text); background: var(--bg); }
+  textarea {
+    width: 100%; min-height: 220px; resize: vertical; padding: 12px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+    font: inherit;
+  }
+  .count { color: var(--muted); font-size: 0.85rem; text-align: right; margin-top: 4px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; margin-top: 16px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--muted); }
+  select, input[type="file"] {
+    padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  input[type="range"] { width: 160px; accent-color: var(--accent); }
+  .primary {
+    margin-left: auto; padding: 9px 22px; border: none; border-radius: 8px;
+    background: var(--accent); color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer;
+  }
+  .primary:disabled { opacity: 0.5; cursor: default; }
+  .status { min-height: 1.5em; color: var(--muted); margin: 0; }
+  .status.error { color: var(--error); }
+  audio { width: 100%; margin-top: 12px; }
+  .download { display: inline-block; margin-top: 8px; color: var(--accent); }
+  footer { color: var(--muted); font-size: 0.85rem; text-align: center; margin-top: 24px; }
+  footer a { color: inherit; }
+  @media (max-width: 520px) { .primary { margin-left: 0; width: 100%; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>TTSFreeUse</h1>
+  <p class="subtitle">Free, offline text-to-speech for books and documents.</p>
+
+  <section class="panel">
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="text">Paste text</button>
+      <button role="tab" aria-selected="false" data-tab="file">Upload file</button>
+    </div>
+
+    <div id="tab-text">
+      <textarea id="text" placeholder="Paste or type some text to hear it read aloud…">Welcome to TTSFreeUse. This voice runs entirely on your own computer, so your documents never leave your machine. Try pasting a paragraph from a technical book, then pick a different voice or speed and listen again.</textarea>
+      <div class="count" id="count"></div>
+    </div>
+
+    <div id="tab-file" hidden>
+      <label>PDF, DOCX, or TXT file
+        <input type="file" id="file" accept=".pdf,.docx,.txt">
+      </label>
+    </div>
+
+    <div class="controls">
+      <label>Voice
+        <select id="voice"></select>
+      </label>
+      <label><span>Speed: <span id="speed-value">1.0×</span></span>
+        <input type="range" id="speed" min="0.5" max="2" step="0.1" value="1">
+      </label>
+      <button class="primary" id="go" disabled>Read aloud</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <p class="status" id="status">Connecting…</p>
+    <div id="player" hidden>
+      <audio id="audio" controls></audio>
+      <a class="download" id="download" download>Download audio</a>
+    </div>
+  </section>
+
+  <footer>Everything runs on your computer — nothing is uploaded. Please use documents you have the right to use.
+    · <a href="/swagger">API</a></footer>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let mode = 'text';
+  let ready = false;
+  let busy = false;
+  let audioUrl = null;
+
+  function setStatus(message, isError = false) {
+    $('status').textContent = message;
+    $('status').classList.toggle('error', isError);
+  }
+
+  function updateButton() {
+    const hasInput = mode === 'text' ? $('text').value.trim().length > 0 : $('file').files.length > 0;
+    $('go').disabled = !ready || busy || !hasInput;
+  }
+
+  function updateCount() {
+    const words = $('text').value.trim().split(/\s+/).filter(Boolean).length;
+    // ~150 spoken words per minute at normal speed
+    const minutes = words / 150 / Number($('speed').value);
+    $('count').textContent = words
+      ? `${words.toLocaleString()} words · ${minutes < 1 ? 'under a minute' : 'about ' + Math.round(minutes) + ' min'} of audio`
+      : '';
+  }
+
+  // Poll until the voice model is ready (it downloads on first run).
+  async function waitForEngine() {
+    try {
+      const res = await fetch('/api/speech/status');
+      const s = await res.json();
+      ready = s.ready;
+      if (ready) {
+        if (!busy) setStatus('Ready. Press “Read aloud” to listen.');
+        await loadVoices();
+      } else {
+        setStatus(s.status);
+        setTimeout(waitForEngine, 1500);
+      }
+    } catch {
+      setStatus('Can’t reach the TTSFreeUse server. Is it running?', true);
+      setTimeout(waitForEngine, 3000);
+    }
+    updateButton();
+  }
+
+  async function loadVoices() {
+    const res = await fetch('/api/speech/voices');
+    const data = await res.json();
+    const groups = {};
+    for (const v of data.voices) {
+      const key = `${v.language === 'en-GB' ? 'British' : 'American'} ${v.gender}`;
+      (groups[key] ??= []).push(v);
+    }
+    const select = $('voice');
+    select.innerHTML = '';
+    for (const [name, voices] of Object.entries(groups)) {
+      const group = document.createElement('optgroup');
+      group.label = name;
+      for (const v of voices) {
+        const opt = new Option(v.name, v.id, false, v.id === data.defaultVoice);
+        group.append(opt);
+      }
+      select.append(group);
+    }
+  }
+
+  async function narrate() {
+    busy = true;
+    updateButton();
+    $('player').hidden = true;
+    const started = Date.now();
+    const tick = setInterval(() => {
+      setStatus(`Generating speech… ${Math.round((Date.now() - started) / 1000)}s`);
+    }, 500);
+    setStatus('Generating speech…');
+
+    try {
+      const voice = $('voice').value;
+      const speed = Number($('speed').value);
+      let res, name;
+      if (mode === 'text') {
+        res = await fetch('/api/speech/text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: $('text').value, voice, speed }),
+        });
+        name = 'narration.wav';
+      } else {
+        const file = $('file').files[0];
+        const form = new FormData();
+        form.append('file', file);
+        form.append('voice', voice);
+        form.append('speed', speed);
+        res = await fetch('/api/speech/convert', { method: 'POST', body: form });
+        name = file.name.replace(/\.[^.]+$/, '') + '.wav';
+      }
+
+      if (!res.ok) {
+        setStatus(await res.text() || `Something went wrong (${res.status}).`, true);
+        return;
+      }
+
+      const blob = await res.blob();
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      audioUrl = URL.createObjectURL(blob);
+      $('audio').src = audioUrl;
+      $('download').href = audioUrl;
+      $('download').download = name;
+      $('player').hidden = false;
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      setStatus(`Done in ${secs}s.`);
+      $('audio').play().catch(() => {});
+    } catch (e) {
+      setStatus('Request failed: ' + e.message, true);
+    } finally {
+      clearInterval(tick);
+      busy = false;
+      updateButton();
+    }
+  }
+
+  document.querySelectorAll('.tabs button').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      mode = tab.dataset.tab;
+      document.querySelectorAll('.tabs button').forEach((t) => t.setAttribute('aria-selected', t === tab));
+      $('tab-text').hidden = mode !== 'text';
+      $('tab-file').hidden = mode !== 'file';
+      updateButton();
+    });
+  });
+  $('text').addEventListener('input', () => { updateCount(); updateButton(); });
+  $('file').addEventListener('change', updateButton);
+  $('speed').addEventListener('input', () => {
+    $('speed-value').textContent = Number($('speed').value).toFixed(1) + '×';
+    updateCount();
+  });
+  $('go').addEventListener('click', narrate);
+  $('text').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !$('go').disabled) narrate();
+  });
+
+  updateCount();
+  waitForEngine();
+</script>
+</body>
+</html>

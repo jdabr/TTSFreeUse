@@ -8,8 +8,28 @@ namespace TTSFreeUse.Core.Extractors
     {
         public bool CanHandle(string ext) => ext == ".docx";
 
+        // Password-encrypted and rights-managed (IRM) Word files are stored in an
+        // OLE compound file container instead of a normal .docx zip.
+        private static readonly byte[] CompoundFileSignature = { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 };
+
         public Task<string> ExtractAsync(Stream fileStream)
         {
+            if (!fileStream.CanSeek)
+            {
+                var copy = new MemoryStream();
+                fileStream.CopyTo(copy);
+                copy.Position = 0;
+                fileStream = copy;
+            }
+
+            var header = new byte[CompoundFileSignature.Length];
+            var read = fileStream.ReadAtLeast(header, header.Length, throwOnEndOfStream: false);
+            fileStream.Position = 0;
+            if (read == header.Length && header.AsSpan().SequenceEqual(CompoundFileSignature))
+                throw new ProtectedDocumentException(
+                    "This Word document is password-protected or rights-protected. TTSFreeUse can only " +
+                    "read documents that open without a password.");
+
             using var doc = WordprocessingDocument.Open(fileStream, false);
             var body = doc.MainDocumentPart?.Document?.Body;
             if (body == null)
