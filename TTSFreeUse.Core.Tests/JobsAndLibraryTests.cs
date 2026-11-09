@@ -286,6 +286,30 @@ public class NarrationJobQueueTests : IDisposable
     private const string ThreeSentences = "First sentence here. Second sentence here. Third one here.";
 
     [Fact]
+    public async Task FinishedJobsLetGoOfTheDocumentText()
+    {
+        var (queue, _) = Create(new FakeEngine());
+        var job = queue.Enqueue("Doc", ThreeSentences, new TtsOptions(), AudioFormat.Wav);
+
+        await queue.ProcessAsync(job, TestContext.Current.CancellationToken);
+
+        Assert.Equal(JobState.Completed, job.State);
+        Assert.Empty(job.Chunks);
+    }
+
+    [Fact]
+    public void RefusesTooManyWaitingJobs()
+    {
+        var (queue, _) = Create(new FakeEngine());
+        for (int i = 0; i < NarrationJobQueue.MaxActiveJobs; i++)
+            queue.Enqueue($"Doc {i}", ThreeSentences, new TtsOptions(), AudioFormat.Wav);
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            queue.Enqueue("One too many", ThreeSentences, new TtsOptions(), AudioFormat.Wav));
+        Assert.Contains("already", ex.Message);
+    }
+
+    [Fact]
     public async Task WavJobNarratesAndSavesToLibrary()
     {
         var (queue, library) = Create(new FakeEngine());

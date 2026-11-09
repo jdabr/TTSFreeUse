@@ -1,4 +1,5 @@
 using System.Formats.Tar;
+using System.Security.Cryptography;
 using ICSharpCode.SharpZipLib.BZip2;
 
 namespace TTSFreeUse.Core.TTS.Kokoro
@@ -16,8 +17,16 @@ namespace TTSFreeUse.Core.TTS.Kokoro
         public static readonly Uri DownloadUrl = new(
             $"https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/{ModelName}.tar.bz2");
 
-        /// <summary>Approximate archive size, used for progress when the server sends no length.</summary>
-        private const long ApproxDownloadBytes = 350_000_000;
+        /// <summary>
+        /// SHA-256 of the archive, as published by GitHub for this release file.
+        /// A download that doesn't match is discarded, so a tampered or
+        /// corrupted model is never installed. If the sherpa-onnx project
+        /// replaces the file, this must be updated in a new TTSFreeUse release.
+        /// </summary>
+        public const string DownloadSha256 = "60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4";
+
+        /// <summary>Archive size, used for progress when the server sends no length.</summary>
+        private const long ExpectedDownloadBytes = 349_886_476;
 
         // Files the engine needs; if any is missing the model is (re)downloaded.
         private static readonly string[] RequiredFiles =
@@ -33,6 +42,9 @@ namespace TTSFreeUse.Core.TTS.Kokoro
         public string TokensFile => Path.Combine(Directory, "tokens.txt");
         public string LexiconFile => Path.Combine(Directory, "lexicon-us-en.txt");
         public string EspeakDataDir => Path.Combine(Directory, "espeak-ng-data");
+
+        /// <summary>The checksum a download must match (overridable for tests).</summary>
+        internal string ExpectedSha256 { get; init; } = DownloadSha256;
 
         public KokoroModel(string? modelsRoot = null)
         {
@@ -68,7 +80,7 @@ namespace TTSFreeUse.Core.TTS.Kokoro
 
             try
             {
-                await DownloadAsync(archive, progress, http, cancellationToken);
+                await DownloadAsync(archive, ExpectedSha256, progress, http, cancellationToken);
 
                 if (System.IO.Directory.Exists(staging))
                     System.IO.Directory.Delete(staging, recursive: true);
@@ -101,7 +113,7 @@ namespace TTSFreeUse.Core.TTS.Kokoro
             }
         }
 
-        private static async Task DownloadAsync(string path, IProgress<double>? progress,
+        private static async Task DownloadAsync(string path, string expectedSha256, IProgress<double>? progress,
             HttpClient? http, CancellationToken cancellationToken)
         {
             var ownsClient = http == null;
@@ -112,9 +124,10 @@ namespace TTSFreeUse.Core.TTS.Kokoro
                     HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 response.EnsureSuccessStatusCode();
 
-                var total = response.Content.Headers.ContentLength ?? ApproxDownloadBytes;
+                var total = response.Content.Headers.ContentLength ?? ExpectedDownloadBytes;
                 await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
                 await using var target = File.Create(path);
+                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
 
                 var buffer = new byte[81920];
                 long done = 0;
@@ -122,9 +135,16 @@ namespace TTSFreeUse.Core.TTS.Kokoro
                 while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
                 {
                     await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                    hash.AppendData(buffer, 0, read);
                     done += read;
                     progress?.Report(Math.Min(1.0, (double)done / total));
                 }
+
+                var actual = Convert.ToHexString(hash.GetHashAndReset());
+                if (!actual.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException(
+                        "The downloaded voice model didn't match the expected version and was discarded. " +
+                        "Please try again later; if this keeps happening, update TTSFreeUse.");
             }
             finally
             {

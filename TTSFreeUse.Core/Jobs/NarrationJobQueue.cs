@@ -13,6 +13,12 @@ namespace TTSFreeUse.Core.Jobs
     /// </summary>
     public class NarrationJobQueue
     {
+        /// <summary>Most conversions that can be waiting or running at once.</summary>
+        public const int MaxActiveJobs = 20;
+
+        /// <summary>Finished jobs kept in the list; older ones are dropped (their files stay in the library).</summary>
+        public const int MaxFinishedJobs = 50;
+
         private readonly NarrationPipeline _pipeline;
         private readonly AudioLibrary _library;
         private readonly Ffmpeg _ffmpeg;
@@ -35,6 +41,9 @@ namespace TTSFreeUse.Core.Jobs
         {
             if (format.NeedsEncoder() && !_ffmpeg.IsObtainable)
                 throw new ArgumentException(Ffmpeg.InstallInstructions);
+            if (_jobs.Values.Count(j => j.IsActive) >= MaxActiveJobs)
+                throw new ArgumentException(
+                    $"There are already {MaxActiveJobs} conversions waiting. Please wait for some to finish.");
 
             var chunks = _pipeline.Prepare(rawText);
             if (chunks.Count == 0)
@@ -151,11 +160,19 @@ namespace TTSFreeUse.Core.Jobs
             }
         }
 
-        private static void Finish(NarrationJob job, JobState state)
+        private void Finish(NarrationJob job, JobState state)
         {
             job.State = state;
             job.StatusText = null;
-            job.Finished = DateTimeOffset.UtcNow;
+            job.ReleaseText();
+            ForgetOldFinishedJobs();
+        }
+
+        private void ForgetOldFinishedJobs()
+        {
+            var finished = _jobs.Values.Where(j => !j.IsActive).OrderByDescending(j => j.Created).ToList();
+            foreach (var old in finished.Skip(MaxFinishedJobs))
+                _jobs.TryRemove(old.Id, out _);
         }
 
         private static void DeleteQuietly(string? path)

@@ -212,7 +212,7 @@
   const $ = (id) => document.getElementById(id);
   let mode = 'text';
   let ready = false;
-  let listening = false;
+  let preparing = false;   // true while "Listen now" is splitting the text, before playback starts
   let audioUrl = null;
   let jobsTimer = null;
   const knownDone = new Set();
@@ -253,7 +253,7 @@
 
   function updateButtons() {
     const hasInput = mode === 'text' ? $('text').value.trim().length > 0 : $('file').files.length > 0;
-    $('listen').disabled = !ready || listening || !hasInput;
+    $('listen').disabled = !ready || preparing || !hasInput;
     $('save').disabled = !ready || !hasInput;
     $('hint').textContent = mode === 'text'
       ? '“Listen now” starts reading in a few seconds. “Save audio file” makes a file you can keep or copy to your phone.'
@@ -275,7 +275,7 @@
       const s = await (await fetch('/api/speech/status')).json();
       ready = s.ready;
       if (ready) {
-        if (!listening) setStatus('Ready.');
+        if (!session && !preparing) setStatus('Ready.');
         await loadVoices();
       } else {
         setStatus(s.status);
@@ -321,7 +321,7 @@
     const s = { abort: new AbortController(), ctx: new AudioContext(), passages: [], words: [],
                 scheduled: [], nextTime: 0, allLoaded: false, shown: -1, title: '' };
     session = s;
-    listening = true;
+    preparing = true;
     updateButtons();
     setStatus(mode === 'text' ? 'Getting ready…' : 'Reading the document…');
     const signal = s.abort.signal;
@@ -344,7 +344,7 @@
       s.passages = data.passages;
       s.words = s.passages.map(wordCount);
       s.title = mode === 'file' ? data.title : '';
-      listening = false;
+      preparing = false;
       updateButtons();
       $('reader').hidden = false;
       $('pause').textContent = 'Pause';
@@ -375,7 +375,7 @@
     } catch (e) {
       if (e.name !== 'AbortError' && session === s) failListening(s, 'Request failed: ' + e.message);
     } finally {
-      if (session === s || session === null) { listening = false; updateButtons(); }
+      if (session === s || session === null) { preparing = false; updateButtons(); }
     }
   }
 
@@ -433,7 +433,7 @@
     setStatus(message, true);
   }
 
-  function playUrl(url, isBlob = false, label = null) {
+  function playUrl(url, label = null) {
     stopListening();
     if (audioUrl && audioUrl.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
     audioUrl = url;
@@ -542,7 +542,7 @@
       list.append(el('li', {},
         el('div', { className: 'row' },
           el('span', { className: 'name', textContent: item.fileName }),
-          el('button', { className: 'link', textContent: 'Play', onclick: () => playUrl(url, false, item.fileName) }),
+          el('button', { className: 'link', textContent: 'Play', onclick: () => playUrl(url, item.fileName) }),
           el('a', { className: 'link', href: url + '?download=true', textContent: 'Download' }),
           el('button', { className: 'link danger', textContent: 'Delete', onclick: () => { confirmBox.hidden = false; } })),
         el('div', { className: 'meta' },
@@ -643,7 +643,7 @@
         body: JSON.stringify({ text, ...options() }),
       });
       if (!res.ok) { setStatus(await errorText(res) || `Something went wrong (${res.status}).`, true); return; }
-      playUrl(URL.createObjectURL(await res.blob()), true, label);
+      playUrl(URL.createObjectURL(await res.blob()), label);
     } catch (e) {
       setStatus('Request failed: ' + e.message, true);
     }

@@ -87,6 +87,10 @@ namespace TTSFreeUse.Api
 
             var app = builder.Build();
 
+            // Keep other websites from using this local server (see the class
+            // for details). AllowedHosts in appsettings.json is the other half.
+            app.UseLocalOnlyProtection();
+
             // API docs at /swagger. The app only listens on this computer
             // (localhost), so they're always on.
             app.UseSwagger();

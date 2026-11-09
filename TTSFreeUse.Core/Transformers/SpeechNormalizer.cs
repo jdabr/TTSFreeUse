@@ -120,11 +120,12 @@ namespace TTSFreeUse.Core.Transformers
             // A straight quote after a number is an inch mark only when it isn't
             // closing a quotation ("Chapter 5" must not become "5 inches").
             // Earlier inch marks (quotes right after a digit) aren't counted.
+            // Matches arrive in order, so the count is kept as a running total.
+            int scanned = 0, quotesBefore = 0;
             text = InchMark.Replace(text, m =>
             {
-                var quotesBefore = 0;
-                for (int i = 0; i < m.Index; i++)
-                    if (text[i] == '"' && (i == 0 || !char.IsDigit(text[i - 1])))
+                for (; scanned < m.Index; scanned++)
+                    if (text[scanned] == '"' && (scanned == 0 || !char.IsDigit(text[scanned - 1])))
                         quotesBefore++;
                 return m.Value.Contains('"') && quotesBefore % 2 == 1
                     ? m.Value
@@ -226,9 +227,8 @@ namespace TTSFreeUse.Core.Transformers
             var unit = UnitTable[unitText];
             var hasRange = m.Groups["num2"].Success;
             var lastNumber = hasRange ? m.Groups["num2"].Value : m.Groups["num"].Value;
-            // "15 A" is amps, but "Class 1 A" or "Figure 3 A" is a letter; only
-            // treat single capital letters as units when glued on ("15A") or
-            // when a sentence context isn't obviously a label.
+            // "15 A" is amps, but in "Class 1 A" or "Figure 3 A" the letter is
+            // part of a label, so single-letter units after a label word are left alone.
             if (unitText is "A" or "V" or "W" or "L" or "m" or "g" &&
                 LooksLikeLabel(text, m.Index))
                 return m.Value;
@@ -247,7 +247,7 @@ namespace TTSFreeUse.Core.Transformers
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static bool LooksLikeLabel(string text, int numberStart) =>
-            LabelWord.IsMatch(text.AsSpan(0, numberStart).ToString());
+            LabelWord.IsMatch(TextBefore(text, numberStart));
 
         private static bool EndsSentence(string text, int index)
         {
@@ -375,7 +375,7 @@ namespace TTSFreeUse.Core.Transformers
                 return m.Value;
 
             if (!plural && RomanNumeral.IsMatch(word))
-                return RomanLabel.IsMatch(text[..m.Index]) ? RomanToNumber(word).ToString() : m.Value;
+                return RomanLabel.IsMatch(TextBefore(text, m.Index)) ? RomanToNumber(word).ToString() : m.Value;
             if (SayAsWord.TryGetValue(word, out var spoken))
                 return spoken + (plural ? "s" : "");
             if (!AlwaysSpell.Contains(word) && !AlwaysSpell.Contains(m.Value) && IsWord(m.Value, word))
@@ -458,7 +458,15 @@ namespace TTSFreeUse.Core.Transformers
                 : sub.IndexOf(c) is >= 0 and var j ? (char)('0' + j) : c).ToArray());
         }
 
-        // ---------- number helpers ----------
+        // ---------- helpers ----------
+
+        /// <summary>
+        /// The few dozen characters just before <paramref name="index"/>: enough
+        /// to see a preceding word ("Class", "a") or number, without copying and
+        /// re-scanning the whole text for every match.
+        /// </summary>
+        private static string TextBefore(string text, int index, int length = 40) =>
+            text.Substring(Math.Max(0, index - length), Math.Min(index, length));
 
         private static readonly Regex TrailingNumber = new(@"(" + NumberPattern + @")\s*$", RegexOptions.Compiled);
 
@@ -467,16 +475,18 @@ namespace TTSFreeUse.Core.Transformers
         private static readonly Regex Article = new(@"\b(?:a|an)\s+$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static bool AfterArticle(string text, int numberStart) =>
-            Article.IsMatch(text.AsSpan(0, numberStart).ToString());
+            Article.IsMatch(TextBefore(text, numberStart));
 
         /// <summary>Singular or plural for the number that ends just before <paramref name="markIndex"/>.</summary>
         private static string Plural(string text, int markIndex, string one, string many)
         {
-            var match = TrailingNumber.Match(text[..markIndex]);
+            var before = TextBefore(text, markIndex);
+            var match = TrailingNumber.Match(before);
             if (!match.Success)
                 return many;
             var number = match.Groups[1].Value;
-            return IsOneOrLess(number) || AfterArticle(text, match.Groups[1].Index) ? one : many;
+            var numberStart = markIndex - before.Length + match.Groups[1].Index;
+            return IsOneOrLess(number) || AfterArticle(text, numberStart) ? one : many;
         }
 
         /// <summary>"1", "0.5", "3/4" take a singular unit; everything else plural.</summary>

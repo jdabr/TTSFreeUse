@@ -16,8 +16,6 @@ namespace TTSFreeUse.Core.Extractors
 
         public const string SupportedTypes = ".pdf, .docx, .txt";
 
-        public bool IsSupported(string fileName) => Find(fileName) != null;
-
         public async Task<string> ReadAsync(Stream stream, string fileName)
         {
             var ext = Path.GetExtension(fileName).ToLowerInvariant();

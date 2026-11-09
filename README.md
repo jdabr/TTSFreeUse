@@ -95,8 +95,7 @@ The web page uses a small HTTP API, also browsable at
 | `GET /api/speech/voices` | Available voices |
 | `POST /api/speech/prepare` | `{ "text": "..." }` → the cleaned text split into short passages for live listening |
 | `POST /api/speech/prepare-file` | Same, for an uploaded `.pdf`, `.docx`, or `.txt` file |
-| `POST /api/speech/text` | Instant: `{ "text": "...", "voice": "bf_emma", "speed": 1.1 }` → WAV audio |
-| `POST /api/speech/convert` | Instant: upload a `.pdf`, `.docx`, or `.txt` file → WAV audio |
+| `POST /api/speech/text` | Speak up to 10,000 characters: `{ "text": "...", "voice": "bf_emma", "speed": 1.1 }` → WAV audio |
 | `POST /api/jobs/text` | Background: `{ "text": "...", "format": "Mp3" }` → job |
 | `POST /api/jobs/file` | Background: upload a document (+ `format`, `voice`, `speed`) → job |
 | `GET /api/jobs`, `GET /api/jobs/{id}` | Job progress and estimated time left |
@@ -109,6 +108,12 @@ The web page uses a small HTTP API, also browsable at
 | `DELETE /api/library/{file}` | Delete a saved file |
 
 `voice`, `speed` (0.5–2.0), and `format` (`Mp3`, `M4b`, `Wav`) are optional.
+
+The API has no login, so it only listens on your own computer (`localhost`)
+and refuses requests sent by other websites open in your browser. Scripts and
+tools like `curl` on the same computer work normally. Making it reachable from
+other devices (by changing `AllowedHosts` and the listening address) would let
+anyone on your network use it, so that isn't recommended.
 
 ### Speed
 

@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
@@ -8,7 +8,7 @@ namespace TTSFreeUse.Core.Extractors
 {
     public class DocxExtractor : ITextExtractor
     {
-        public bool CanHandle(string ext) => ext == ".docx";
+        public bool CanHandle(string extension) => extension == ".docx";
 
         // Password-encrypted and rights-managed (IRM) Word files are stored in an
         // OLE compound file container instead of a normal .docx zip.

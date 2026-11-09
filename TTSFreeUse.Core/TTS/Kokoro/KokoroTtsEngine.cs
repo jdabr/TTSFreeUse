@@ -94,7 +94,6 @@ namespace TTSFreeUse.Core.TTS.Kokoro
         public string DefaultVoice => _options.DefaultVoice;
         public bool IsReady => _tts != null;
         public string Status => _status;
-        public KokoroModel Model => _model;
 
         private Lazy<HashSet<string>?>? _lexicon;
 

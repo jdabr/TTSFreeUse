@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Mvc;
 using TTSFreeUse.Core.Audio;
 using TTSFreeUse.Core.Extractors;
 using TTSFreeUse.Core.Jobs;
-using TTSFreeUse.Core.Pipeline;
 using TTSFreeUse.Core.TTS;
 
 namespace TTSFreeUse.Api.Controllers
@@ -19,11 +18,11 @@ namespace TTSFreeUse.Api.Controllers
         private readonly DocumentReader _reader;
         private readonly ITtsEngine _engine;
 
-        public JobsController(NarrationJobQueue queue, DocumentReader reader, NarrationPipeline pipeline)
+        public JobsController(NarrationJobQueue queue, DocumentReader reader, ITtsEngine engine)
         {
             _queue = queue;
             _reader = reader;
-            _engine = pipeline.Engine;
+            _engine = engine;
         }
 
         /// <summary>Jobs from this session, newest first.</summary>

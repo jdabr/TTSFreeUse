@@ -30,7 +30,6 @@ namespace TTSFreeUse.Core.Jobs
         public int ChunksDone { get; internal set; }
         public int ChunksTotal { get; }
         public DateTimeOffset? Started { get; internal set; }
-        public DateTimeOffset? Finished { get; internal set; }
         public TimeSpan? AudioDuration { get; internal set; }
         public string? FileName { get; internal set; }
         public string? Error { get; internal set; }
@@ -58,7 +57,10 @@ namespace TTSFreeUse.Core.Jobs
             }
         }
 
-        internal IReadOnlyList<string> Chunks { get; }
+        /// <summary>The prepared text; released once the job ends so finished jobs don't hold whole documents in memory.</summary>
+        internal IReadOnlyList<string> Chunks { get; private set; }
         internal CancellationTokenSource Cancellation { get; } = new();
+
+        internal void ReleaseText() => Chunks = Array.Empty<string>();
     }
 }

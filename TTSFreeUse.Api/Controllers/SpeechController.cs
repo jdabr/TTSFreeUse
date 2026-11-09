@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using TTSFreeUse.Core.Extractors;
 using TTSFreeUse.Core.Pipeline;
 using TTSFreeUse.Core.TTS;
@@ -6,14 +6,21 @@ using TTSFreeUse.Core.TTS;
 namespace TTSFreeUse.Api.Controllers
 {
     /// <summary>
-    /// Instant narration: returns WAV audio directly in the response. Good for
-    /// short text you want to hear right away; use /api/jobs for documents.
+    /// Live listening: splits text into short passages and speaks one passage
+    /// at a time as WAV audio. Documents to keep go through /api/jobs instead.
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     public class SpeechController : ControllerBase
     {
+        /// <summary>Largest document upload accepted (also used by /api/jobs).</summary>
         internal const long MaxUploadBytes = 200 * 1024 * 1024;
+
+        /// <summary>
+        /// Most text spoken in one request. The page sends ~300-character
+        /// passages; longer text should be saved as an audio file instead.
+        /// </summary>
+        internal const int MaxSpeakCharacters = 10_000;
 
         private readonly NarrationPipeline _pipeline;
         private readonly DocumentReader _reader;
@@ -78,43 +85,19 @@ namespace TTSFreeUse.Api.Controllers
                 : Ok(new PreparedText(title, passages));
         }
 
-        /// <summary>Narrates an uploaded PDF, DOCX, or TXT file and returns a WAV file.</summary>
-        [HttpPost("convert")]
-        [RequestSizeLimit(MaxUploadBytes)]
-        [RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)]
-        public async Task<IActionResult> Convert(IFormFile file,
-            [FromForm] string? voice, [FromForm] float speed = 1.0f)
-        {
-            if (file == null || file.Length == 0)
-                return BadRequest("No file uploaded.");
-
-            string rawText;
-            try
-            {
-                await using var stream = file.OpenReadStream();
-                rawText = await _reader.ReadAsync(stream, file.FileName);
-            }
-            catch (DocumentReadException ex)
-            {
-                return BadRequest(ex.Message);
-            }
-
-            return await NarrateAsync(rawText, voice, speed, Path.GetFileNameWithoutExtension(file.FileName));
-        }
-
-        /// <summary>Narrates text typed or pasted by the user and returns a WAV file.</summary>
+        /// <summary>Speaks a short piece of text and returns it as WAV audio.</summary>
         [HttpPost("text")]
-        [RequestSizeLimit(MaxUploadBytes)]
-        public Task<IActionResult> Text([FromBody] TextRequest request) =>
-            NarrateAsync(request.Text, request.Voice, request.Speed ?? 1.0f, "narration");
-
-        private async Task<IActionResult> NarrateAsync(string? rawText, string? voice, float speed, string fileName)
+        public async Task<IActionResult> Text([FromBody] TextRequest request)
         {
-            var problem = RequestValidation.Check(Engine, voice, speed);
+            var speed = request.Speed ?? 1.0f;
+            var problem = RequestValidation.Check(Engine, request.Voice, speed);
             if (problem != null)
                 return problem;
+            if (request.Text?.Length > MaxSpeakCharacters)
+                return BadRequest($"That's more than {MaxSpeakCharacters:N0} characters. " +
+                                  "Use \"Save audio file\" for longer text.");
 
-            var chunks = _pipeline.Prepare(rawText ?? string.Empty);
+            var chunks = _pipeline.Prepare(request.Text ?? string.Empty);
             if (chunks.Count == 0)
                 return UnprocessableEntity(
                     "No readable text found. Scanned PDFs (images of pages) aren't supported yet.");
@@ -126,10 +109,10 @@ namespace TTSFreeUse.Api.Controllers
             try
             {
                 // Stops synthesizing if the user closes the page or cancels.
-                await _pipeline.NarrateAsync(chunks, output, new TtsOptions(voice, speed),
+                await _pipeline.NarrateAsync(chunks, output, new TtsOptions(request.Voice, speed),
                     cancellationToken: HttpContext.RequestAborted);
                 output.Position = 0;
-                return File(output, "audio/wav", Core.Jobs.AudioLibrary.SafeName(fileName) + ".wav");
+                return File(output, "audio/wav");
             }
             catch
             {

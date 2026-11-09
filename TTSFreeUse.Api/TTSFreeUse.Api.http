@@ -6,14 +6,20 @@ GET {{TTSFreeUse.Api_HostAddress}}/api/speech/status
 ### List voices
 GET {{TTSFreeUse.Api_HostAddress}}/api/speech/voices
 
-### Narrate text
+### Speak a short piece of text (returns WAV)
 POST {{TTSFreeUse.Api_HostAddress}}/api/speech/text
 Content-Type: application/json
 
 { "text": "Hello! This is free, offline text to speech.", "voice": "bf_emma", "speed": 1.0 }
 
-### Narrate a file (PDF, DOCX, or TXT)
-POST {{TTSFreeUse.Api_HostAddress}}/api/speech/convert
+### See exactly what the voice will read
+POST {{TTSFreeUse.Api_HostAddress}}/api/pronunciations/preview
+Content-Type: application/json
+
+{ "text": "Install a 20A GFCI per NEC §210.8(A)." }
+
+### Save a document as an MP3 in the background
+POST {{TTSFreeUse.Api_HostAddress}}/api/jobs/file
 Content-Type: multipart/form-data; boundary=boundary
 
 --boundary
@@ -21,4 +27,11 @@ Content-Disposition: form-data; name="file"; filename="sample.pdf"
 Content-Type: application/pdf
 
 < ./sample.pdf
+--boundary
+Content-Disposition: form-data; name="format"
+
+Mp3
 --boundary--
+
+### Conversion progress
+GET {{TTSFreeUse.Api_HostAddress}}/api/jobs

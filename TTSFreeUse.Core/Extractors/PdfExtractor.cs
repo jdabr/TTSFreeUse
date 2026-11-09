@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 using UglyToad.PdfPig.Exceptions;
@@ -26,7 +26,7 @@ namespace TTSFreeUse.Core.Extractors
 
         private static readonly Regex Digits = new(@"\d+", RegexOptions.Compiled);
 
-        public bool CanHandle(string ext) => ext == ".pdf";
+        public bool CanHandle(string extension) => extension == ".pdf";
 
         public Task<string> ExtractAsync(Stream fileStream)
         {
@@ -117,7 +117,7 @@ namespace TTSFreeUse.Core.Extractors
         {
             if (!IsEdge(index, count))
                 return false;
-            return PageNumber.IsMatch(line) || repeated.Contains(Normalize(line));
+            return PageNumber.IsMatch(line) || repeated.Contains(MaskDigits(line));
         }
 
         private static HashSet<string> FindRepeatedEdgeLines(List<List<string>> pages)
@@ -132,7 +132,7 @@ namespace TTSFreeUse.Core.Extractors
                 // Count each distinct line once per page.
                 var edge = lines
                     .Where((_, i) => IsEdge(i, lines.Count))
-                    .Select(Normalize)
+                    .Select(MaskDigits)
                     .Where(l => l.Length > 0)
                     .Distinct();
                 foreach (var key in edge)
@@ -148,7 +148,7 @@ namespace TTSFreeUse.Core.Extractors
 
         // Page numbers inside headers ("Chapter 3 — 41") vary per page, so
         // compare lines with the digits masked out.
-        private static string Normalize(string line) =>
+        private static string MaskDigits(string line) =>
             Digits.Replace(line.Trim(), "#").ToLowerInvariant();
     }
 }

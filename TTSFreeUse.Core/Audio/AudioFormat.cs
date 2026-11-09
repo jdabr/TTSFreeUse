@@ -5,7 +5,7 @@ namespace TTSFreeUse.Core.Audio
         /// <summary>Plays on virtually everything: phones, car stereos, computers.</summary>
         Mp3,
 
-        /// <summary>Audiobook file: remembers your place and (soon) has chapters in audiobook apps.</summary>
+        /// <summary>Audiobook file: audiobook apps remember your place in it.</summary>
         M4b,
 
         /// <summary>Uncompressed; large (~170 MB per hour). No converter needed.</summary>
