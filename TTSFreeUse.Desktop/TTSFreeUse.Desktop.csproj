@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The Windows app people install: runs TTSFreeUse in the background with a
+    tray icon and opens it in the browser. Build the installer with
+    installer\build-installer.ps1.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Lets the whole solution build on macOS/Linux too (it just won't run there). -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>TTSFreeUse</AssemblyName>
+    <RootNamespace>TTSFreeUse.Desktop</RootNamespace>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <Version>0.1.0</Version>
+    <Product>TTSFreeUse</Product>
+    <Description>Free, offline text-to-speech for documents</Description>
+    <Copyright>Copyright (c) 2026 Jdabr</Copyright>
+    <!-- Tray icons and the browser follow Windows' display scaling. -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <!-- Smaller download: English-only framework messages, no debug files. -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    <!-- The web project's static files aren't carried over automatically;
+         they're included explicitly below. -->
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The web page, served from wwwroot next to the exe. -->
+    <Content Include="..\TTSFreeUse.Api\wwwroot\**" LinkBase="wwwroot"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Leave out what end users don't need: debug symbols, developer-only
+       settings, and the web project's own exe (this launcher replaces it). -->
+  <Target Name="TrimPublishedFiles" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="'%(Extension)' == '.pdb' or '%(Filename)%(Extension)' == 'appsettings.Development.json' or '%(Filename)%(Extension)' == 'TTSFreeUse.Api.exe'" />
+    </ItemGroup>
+  </Target>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\TTSFreeUse.Api\TTSFreeUse.Api.csproj" />
+    <EmbeddedResource Include="app.ico" LogicalName="app.ico" />
+  </ItemGroup>
+
+</Project>

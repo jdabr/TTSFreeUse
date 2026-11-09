@@ -16,15 +16,24 @@ namespace TTSFreeUse.Core.Pipeline
         private readonly ITtsEngine _engine;
         private readonly TextCleaner _cleaner;
         private readonly TextChunker _chunker;
+        private readonly SpeechNormalizer? _normalizer;
 
-        public NarrationPipeline(ITtsEngine engine, TextCleaner cleaner, TextChunker chunker)
+        public NarrationPipeline(ITtsEngine engine, TextCleaner cleaner, TextChunker chunker,
+            SpeechNormalizer? normalizer = null)
         {
             _engine = engine;
             _cleaner = cleaner;
             _chunker = chunker;
+            _normalizer = normalizer;
         }
 
         public ITtsEngine Engine => _engine;
+
+        /// <summary>
+        /// What the voice is actually given for a chunk of text: acronyms,
+        /// units, references, and the user's pronunciation list applied.
+        /// </summary>
+        public string ToSpoken(string chunk) => _normalizer?.Normalize(chunk) ?? chunk;
 
         /// <summary>
         /// Cleans and chunks <paramref name="rawText"/>. Returns no chunks when
@@ -50,7 +59,7 @@ namespace TTSFreeUse.Core.Pipeline
             for (int i = 0; i < chunks.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var samples = await _engine.SynthesizeAsync(chunks[i], options, cancellationToken);
+                var samples = await _engine.SynthesizeAsync(ToSpoken(chunks[i]), options, cancellationToken);
                 await wav.WriteAsync(samples, cancellationToken);
                 if (i < chunks.Count - 1)
                     await wav.WriteSilenceAsync(ChunkGap, cancellationToken);

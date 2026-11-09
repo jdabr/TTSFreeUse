@@ -16,6 +16,13 @@ It uses the following third-party components, each under its own license.
 | [Swashbuckle.AspNetCore](https://github.com/domaindrivendev/Swashbuckle.AspNetCore) | MIT | API documentation page |
 | [Azure Speech SDK](https://aka.ms/csspeech) (`Microsoft.CognitiveServices.Speech`) | [Microsoft Software License](https://aka.ms/csspeech/license) | Optional Azure cloud voices |
 
+## Included in the Windows installer
+
+| Component | License |
+|---|---|
+| [.NET runtime](https://github.com/dotnet/runtime), ASP.NET Core, and Windows Forms (bundled so .NET doesn't need to be installed) | MIT |
+| [Inno Setup](https://jrsoftware.org/isinfo.php) (the installer itself) | [Inno Setup License](https://jrsoftware.org/files/is/license.txt) |
+
 ## Voice model (downloaded on first run)
 
 | Component | License |

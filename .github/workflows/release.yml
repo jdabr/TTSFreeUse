@@ -1,0 +1,48 @@
+# Builds the Windows installer. Pushing a version tag (e.g. `git tag v0.1.0 &&
+# git push origin v0.1.0`) also publishes it as a GitHub release. Can be run
+# by hand from the Actions tab to get an installer without releasing.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Run tests
+        run: dotnet test
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.0.0-dev' }
+          ./installer/build-installer.ps1 -Version $version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TTSFreeUse-Setup
+          path: artifacts/TTSFreeUse-Setup-*.exe
+
+      - name: Publish GitHub release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $installer = (Get-ChildItem artifacts/TTSFreeUse-Setup-*.exe).FullName
+          gh release create $env:GITHUB_REF_NAME $installer --title "TTSFreeUse $env:GITHUB_REF_NAME" --generate-notes

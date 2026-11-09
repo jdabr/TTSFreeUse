@@ -19,6 +19,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TTSFreeUse.Core.Tests", "TTSFreeUse.Core.Tests\TTSFreeUse.Core.Tests.csproj", "{165B4A21-8864-4693-A229-E45CA51A7C5E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TTSFreeUse.Desktop", "TTSFreeUse.Desktop\TTSFreeUse.Desktop.csproj", "{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -65,6 +67,18 @@ Global
 		{165B4A21-8864-4693-A229-E45CA51A7C5E}.Release|x64.Build.0 = Release|Any CPU
 		{165B4A21-8864-4693-A229-E45CA51A7C5E}.Release|x86.ActiveCfg = Release|Any CPU
 		{165B4A21-8864-4693-A229-E45CA51A7C5E}.Release|x86.Build.0 = Release|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Debug|x64.Build.0 = Debug|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Debug|x86.Build.0 = Debug|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Release|Any CPU.Build.0 = Release|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Release|x64.ActiveCfg = Release|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Release|x64.Build.0 = Release|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Release|x86.ActiveCfg = Release|Any CPU
+		{DF70E6E6-519C-48C6-AD0F-7D1BA8330C35}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

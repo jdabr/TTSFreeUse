@@ -37,7 +37,7 @@ namespace TTSFreeUse.Core.Transformers
             // chunk, so short paragraphs don't each become a separate request.
             foreach (var paragraph in text.Split("\n\n", StringSplitOptions.RemoveEmptyEntries))
             {
-                foreach (var sentence in SentenceBoundary.Split(paragraph.Trim()))
+                foreach (var sentence in Sentences(paragraph.Trim()))
                 {
                     foreach (var piece in SplitLong(sentence))
                     {
@@ -52,6 +52,35 @@ namespace TTSFreeUse.Core.Transformers
 
             Flush();
             return chunks.Where(c => c.Length > 0).ToList();
+        }
+
+        // A period after these isn't the end of a sentence: "See Fig. 3",
+        // "on p. 47", "e.g. copper", "J. Smith".
+        private static readonly Regex AbbreviationAtEnd = new(
+            @"(?:^|[\s(])(?:Figs?|pp?|Eqs?|Nos?|Vol|Ch|Chap|Sec|Sect|Art|Tbl|Ref|e\.g|i\.e|vs?|approx|" +
+            @"Dr|Mr|Mrs|Ms|St|Jr|Sr|Inc|Co|Corp|Ltd|[A-Z])\.$",
+            RegexOptions.Compiled);
+
+        private static IEnumerable<string> Sentences(string paragraph)
+        {
+            string? pending = null;
+            foreach (var part in SentenceBoundary.Split(paragraph))
+            {
+                if (pending == null)
+                    pending = part;
+                // Keep "Fig." with "3-2", and "5 in." with "long" (a lowercase
+                // or numeric start means the sentence didn't really end).
+                else if (AbbreviationAtEnd.IsMatch(pending) ||
+                         (part.Length > 0 && (char.IsLower(part[0]) || char.IsDigit(part[0]))))
+                    pending += " " + part;
+                else
+                {
+                    yield return pending;
+                    pending = part;
+                }
+            }
+            if (pending != null)
+                yield return pending;
         }
 
         // Breaks an over-long sentence at clause punctuation, then at spaces,

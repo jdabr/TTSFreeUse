@@ -41,12 +41,34 @@ headers read aloud, odd pronunciations), it helps a lot to include:
 4. Run the app with `dotnet run --project TTSFreeUse.Api` and open
    <http://localhost:5138> (API docs at `/swagger`).
 
+## Building the Windows installer
+
+```powershell
+winget install JRSoftware.InnoSetup      # once
+.\installer\build-installer.ps1 -Version 0.1.0
+```
+
+This publishes `TTSFreeUse.Desktop` self-contained (no .NET needed on the
+user's machine) and writes `artifacts\TTSFreeUse-Setup-0.1.0.exe`. To test the
+app without installing, run `artifacts\publish\win-x64\TTSFreeUse.exe`
+(`--port 5199 --no-browser` avoids clashing with a `dotnet run` copy).
+
+Releases are built by GitHub Actions: pushing a tag like `v0.1.0` runs the
+tests, builds the installer, and attaches it to a new GitHub release
+(`.github/workflows/release.yml`).
+
 ## How the code fits together
 
 ```
-file ──► ITextExtractor ──► TextCleaner ──► TextChunker ──► ITtsEngine ──► WavWriter
-         (PDF/DOCX/TXT)     (normalize)     (≤800 chars)    (Kokoro/Azure)  (audio)
+file ──► ITextExtractor ──► TextCleaner ──► TextChunker ──► SpeechNormalizer ──► ITtsEngine ──► WavWriter
+         (PDF/DOCX/TXT)     (clean up)      (≤800 chars)    (GFCI → G F C I)     (Kokoro/Azure)  (audio)
 ```
+
+`SpeechNormalizer` (in `TTSFreeUse.Core/Transformers`) rewrites each chunk
+just before synthesis — acronyms, units, fractions, references, symbols, then
+the user's `PronunciationStore` list on top. Displayed text is never changed.
+If a technical term is read wrong, a new rule with a test case in
+`SpeechNormalizerTests` is the most useful kind of contribution.
 
 `NarrationPipeline` (in `TTSFreeUse.Core/Pipeline`) ties these together, so
 any front end — the web API today, a desktop app or CLI later — reuses it.

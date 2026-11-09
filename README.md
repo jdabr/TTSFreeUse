@@ -19,14 +19,35 @@ What it offers:
   Your documents never leave your machine.
 - **Book-aware cleanup:** removes running headers and page numbers, rejoins
   words hyphenated across lines, and fixes PDF ligatures and smart quotes.
+- **Speaks technical text the way people say it:** "GFCI" → "G F C I",
+  "15A" → "15 amps", "35 lb-in" → "35 pound-inches", "3/4"" → "3 quarters
+  inch", "§210.8(A)" → "section 210.8 A", "Fig. 3 on p. 47" → "Figure 3 on
+  page 47". Add your own words under **Pronunciations** on the page.
 - **Reads Word equations aloud:** "x squared plus y squared equals z
   squared", "a over b", "the square root of x". (Equations in PDFs aren't
   understood yet.)
 
-> **Status:** early development. It currently runs as a local web API; a
-> simple app interface and one-click installers are planned.
+> **Status:** early development (0.1). Windows has an installer; on macOS and
+> Linux, run it from source for now.
 
-## Quick start
+## Install
+
+### Windows
+
+1. Download **TTSFreeUse-Setup.exe** (about 53 MB) from the
+   [Releases page](https://github.com/jdabr/TTSFreeUse/releases).
+2. Run it. No administrator password is needed, and nothing else has to be
+   installed first.
+   - Windows may show "Windows protected your PC", because the installer isn't
+     signed yet. Click **More info → Run anyway**.
+3. TTSFreeUse opens in your web browser. The first time, the voice
+   (~330 MB) downloads once.
+
+While it's running, TTSFreeUse's icon sits by the clock: click it to reopen
+the page; right-click for **Open audio folder** or **Quit**. Uninstall it from
+Windows Settings → Apps.
+
+### From source (any OS)
 
 Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
@@ -37,7 +58,9 @@ dotnet run --project TTSFreeUse.Api
 ```
 
 On first run the voice model (~330 MB) downloads automatically — this happens
-once. Then open <http://localhost:5138>:
+once. Then open <http://localhost:5138>.
+
+## Using it
 
 - **Listen now** starts reading pasted text or an uploaded document within a
   few seconds, showing the passage being read, with pause and stop.
@@ -78,6 +101,9 @@ The web page uses a small HTTP API, also browsable at
 | `POST /api/jobs/file` | Background: upload a document (+ `format`, `voice`, `speed`) → job |
 | `GET /api/jobs`, `GET /api/jobs/{id}` | Job progress and estimated time left |
 | `POST /api/jobs/{id}/cancel` | Cancel a job |
+| `GET /api/pronunciations` | Your pronunciation list |
+| `PUT /api/pronunciations` | Replace it: `[{ "term": "Romex", "sayAs": "roh mex", "matchCase": false }]` |
+| `POST /api/pronunciations/preview` | `{ "text": "..." }` → the text exactly as the voice will read it |
 | `GET /api/library` | Saved audio files |
 | `GET /api/library/{file}` | Play (supports seeking) or `?download=true` |
 | `DELETE /api/library/{file}` | Delete a saved file |
@@ -106,7 +132,9 @@ minutes of audio and often sound robotic. To list them anyway, set
 
 ## Configuration
 
-Settings live in `TTSFreeUse.Api/appsettings.json`:
+Settings live in `appsettings.json` — in `TTSFreeUse.Api` when running from
+source, or in the install folder (`%LOCALAPPDATA%\Programs\TTSFreeUse`) for
+the Windows app:
 
 ```json
 "Tts": {
@@ -126,6 +154,8 @@ Settings live in `TTSFreeUse.Api/appsettings.json`:
 - `Threads` — CPU threads used for speech; `0` picks automatically.
 - `Library:Directory` — where saved audio goes; empty means
   `Documents\TTSFreeUse`.
+- `Pronunciations:File` — where your pronunciation list is saved; empty
+  means `%LOCALAPPDATA%\TTSFreeUse\pronunciations.json`.
 - `Ffmpeg:Path` — use a specific `ffmpeg` executable;
   `Ffmpeg:AllowDownload` — set to `false` to never download FFmpeg.
 
@@ -148,7 +178,9 @@ Azure is a paid service and sends your text to Microsoft; Kokoro needs neither.
 | Project | Purpose |
 |---|---|
 | `TTSFreeUse.Core` | Text extraction, cleanup, chunking, voice engines, and audio output |
-| `TTSFreeUse.Api` | ASP.NET Core web API exposing the conversion endpoints |
+| `TTSFreeUse.Api` | ASP.NET Core web app: the page and the API |
+| `TTSFreeUse.Desktop` | Windows app: runs the web app in the background with a tray icon |
+| `installer` | Windows installer (Inno Setup) and its build script |
 | `TTSFreeUse.Core.Tests` | Unit tests (`dotnet test`) |
 
 ## Responsible use

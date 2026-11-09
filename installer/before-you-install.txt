@@ -1,0 +1,15 @@
+TTSFreeUse reads documents aloud: PDF, Word (DOCX), and text files, or text you paste in. It's made for people who can't read print or find reading hard.
+
+Free and private
+- Everything runs on this computer. Your documents are never uploaded.
+- No account, no subscription, no usage limits.
+
+First start
+- The voice (about 330 MB) downloads once, the first time TTSFreeUse starts.
+- Saving MP3 or M4B audio downloads a free audio converter (FFmpeg, about 110 MB) the first time.
+- TTSFreeUse opens in your web browser. While it's running, its icon sits by the clock; right-click it to quit.
+
+Please use documents you have the right to use
+Your own files, materials from your employer, school, or training program, books you've bought, and public-domain works. TTSFreeUse refuses password- and copy-protected files, and audio made from copyrighted works shouldn't be shared.
+
+TTSFreeUse is free, open-source software under the MIT License. It includes third-party components under their own licenses; see THIRD-PARTY-NOTICES.md in the install folder.

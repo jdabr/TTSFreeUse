@@ -81,6 +81,27 @@
     background: var(--bg); border-left: 3px solid var(--accent); border-radius: 6px;
   }
   .reader-actions { display: flex; gap: 16px; margin-left: auto; }
+  details > summary { cursor: pointer; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary h2 { display: inline; margin: 0; }
+  details > summary::before { content: "▸ "; color: var(--muted); }
+  details[open] > summary::before { content: "▾ "; }
+  details[open] > summary { margin-bottom: 12px; }
+  h3 { font-size: 0.95rem; margin: 20px 0 8px; }
+  input[type="text"] {
+    width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); color: var(--text); font: inherit;
+  }
+  .pron-row {
+    display: grid; grid-template-columns: 1fr 1.4fr 105px 34px 58px; gap: 8px 12px;
+    align-items: center; padding: 6px 0;
+  }
+  .pron-head { color: var(--muted); font-size: 0.85rem; padding-bottom: 0; }
+  .check { flex-direction: row; align-items: center; gap: 6px; white-space: nowrap; }
+  @media (max-width: 560px) {
+    .pron-row { grid-template-columns: 1fr 1fr; }
+    .pron-head { display: none; }
+  }
   footer { color: var(--muted); font-size: 0.85rem; text-align: center; margin-top: 24px; }
   footer a { color: inherit; }
   @media (max-width: 560px) { .actions { margin-left: 0; width: 100%; } .actions button { flex: 1; } }
@@ -157,6 +178,30 @@
     <h2>Your audio files</h2>
     <ul class="list" id="library"></ul>
     <p class="hint" id="library-hint"></p>
+  </section>
+
+  <section class="panel">
+    <details id="pron-panel">
+      <summary><h2>Pronunciations</h2></summary>
+      <p class="hint" style="margin-top:0">Acronyms (GFCI), units (15A, 35 lb-in), and references (§210.8, Fig. 3)
+        are read out automatically. If the voice still says a word wrong — a brand name, a part, a term from
+        your trade — add it here and write how it sounds.</p>
+      <div class="pron-row pron-head"><span>Written</span><span>Say it as</span><span></span><span></span><span></span></div>
+      <div id="pron-rows"></div>
+      <div class="row" style="margin-top:8px">
+        <button class="link" id="pron-add">+ Add a word</button>
+        <span class="actions"><button class="primary" id="pron-save" disabled>Save list</button></span>
+      </div>
+      <p class="meta" id="pron-status"></p>
+
+      <h3>Try it</h3>
+      <textarea id="pron-test" style="min-height:70px">Install a 20A GFCI per NEC §210.8(A)(1). See Fig. 3 on p. 47, and torque to 35 lb-in.</textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="secondary" id="pron-hear">Hear it</button>
+        <button class="link" id="pron-preview">Show what the voice reads</button>
+      </div>
+      <p class="now-reading" id="pron-spoken" hidden></p>
+    </details>
   </section>
 
   <footer>Everything runs on your computer — nothing is uploaded. Please use documents you have the right to use.
@@ -507,6 +552,117 @@
       'To listen on your phone, copy them over with a USB cable or put them in your cloud storage (OneDrive, Google Drive, iCloud).';
   }
 
+  // ---------- pronunciations ----------
+  let pronEntries = [];
+
+  async function loadPronunciations() {
+    let data;
+    try { data = await (await fetch('/api/pronunciations')).json(); } catch { return; }
+    pronEntries = data.entries.map((e) => ({ ...e }));
+    renderPronunciations();
+    $('pron-save').disabled = true;
+    $('pron-status').textContent = data.error || `Saved on this computer in ${data.file}`;
+    $('pron-status').classList.toggle('error', !!data.error);
+  }
+
+  function markPronunciationsChanged() {
+    $('pron-save').disabled = false;
+    $('pron-status').textContent = 'Unsaved changes.';
+    $('pron-status').classList.remove('error');
+  }
+
+  function renderPronunciations() {
+    const rows = $('pron-rows');
+    rows.innerHTML = '';
+    if (pronEntries.length === 0)
+      rows.append(el('p', { className: 'empty', textContent: 'No words added yet.' }));
+
+    pronEntries.forEach((entry, i) => {
+      const term = el('input', { type: 'text', value: entry.term, placeholder: 'e.g. Romex' });
+      term.setAttribute('aria-label', 'Written');
+      term.addEventListener('input', () => { entry.term = term.value; markPronunciationsChanged(); });
+
+      const sayAs = el('input', { type: 'text', value: entry.sayAs, placeholder: 'e.g. roh mex' });
+      sayAs.setAttribute('aria-label', 'Say it as');
+      sayAs.addEventListener('input', () => { entry.sayAs = sayAs.value; markPronunciationsChanged(); });
+
+      const matchCase = el('input', { type: 'checkbox', checked: entry.matchCase });
+      matchCase.addEventListener('change', () => { entry.matchCase = matchCase.checked; markPronunciationsChanged(); });
+
+      rows.append(el('div', { className: 'pron-row' },
+        term, sayAs,
+        el('label', { className: 'check', title: 'Only when capitalized exactly like this' }, matchCase, 'Match case'),
+        el('button', { className: 'link', textContent: 'Hear',
+          onclick: () => speakOnce(entry.sayAs || entry.term, entry.term) }),
+        el('button', { className: 'link danger', textContent: 'Remove',
+          onclick: () => { pronEntries.splice(i, 1); renderPronunciations(); markPronunciationsChanged(); } })));
+    });
+  }
+
+  async function savePronunciations() {
+    $('pron-save').disabled = true;
+    try {
+      const res = await fetch('/api/pronunciations', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pronEntries),
+      });
+      if (!res.ok) {
+        $('pron-status').textContent = await errorText(res);
+        $('pron-status').classList.add('error');
+        $('pron-save').disabled = false;
+        return;
+      }
+      await loadPronunciations();
+      $('pron-status').textContent = 'Saved. ' + $('pron-status').textContent;
+    } catch (e) {
+      $('pron-status').textContent = 'Couldn’t save: ' + e.message;
+      $('pron-status').classList.add('error');
+      $('pron-save').disabled = false;
+    }
+  }
+
+  async function previewPronunciation() {
+    const res = await fetch('/api/pronunciations/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: $('pron-test').value }),
+    });
+    $('pron-spoken').hidden = false;
+    $('pron-spoken').textContent = res.ok ? (await res.json()).spoken : await errorText(res);
+  }
+
+  // Plays a short piece of text once, through the same rules as everything else.
+  async function speakOnce(text, label) {
+    if (!ready || !text.trim()) return;
+    setStatus('Generating speech…');
+    try {
+      const res = await fetch('/api/speech/text', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, ...options() }),
+      });
+      if (!res.ok) { setStatus(await errorText(res) || `Something went wrong (${res.status}).`, true); return; }
+      playUrl(URL.createObjectURL(await res.blob()), true, label);
+    } catch (e) {
+      setStatus('Request failed: ' + e.message, true);
+    }
+  }
+
+  $('pron-add').addEventListener('click', () => {
+    pronEntries.push({ term: '', sayAs: '', matchCase: false });
+    renderPronunciations();
+    markPronunciationsChanged();
+    $('pron-rows').querySelector('.pron-row:last-child input')?.focus();
+  });
+  $('pron-save').addEventListener('click', savePronunciations);
+  $('pron-preview').addEventListener('click', previewPronunciation);
+  $('pron-hear').addEventListener('click', () => {
+    if (!$('pron-save').disabled) $('pron-status').textContent = 'Save the list first to hear your changes.';
+    previewPronunciation();
+    speakOnce($('pron-test').value, 'pronunciation test');
+  });
+
   // ---------- wiring ----------
   document.querySelectorAll('.tabs button').forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -536,6 +692,8 @@
   waitForEngine();
   refreshJobs();
   refreshLibrary();
+  loadPronunciations();
+  if (location.hash === '#pronunciations') $('pron-panel').open = true;
 </script>
 </body>
 </html>

@@ -7,6 +7,19 @@ public class TextChunkerTests
     private static string[] Words(IEnumerable<string> chunks) =>
         string.Join(" ", chunks).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
 
+    [Theory]
+    [InlineData("See Fig. 3-2 for the wiring.")]
+    [InlineData("It is on p. 47 of the guide.")]
+    [InlineData("Use copper, e.g. THHN wire.")]
+    [InlineData("Ask Dr. Smith or J. Jones.")]
+    [InlineData("Drill a 1/2 in. hole here.")]
+    public void AbbreviationsDontEndASentence(string sentence)
+    {
+        // Small enough that every real sentence becomes its own chunk.
+        var chunks = new TextChunker { MaxChunkLength = 30 }.Chunk("First sentence here. " + sentence);
+        Assert.Equal(new[] { "First sentence here.", sentence }, chunks);
+    }
+
     [Fact]
     public void PreservesSentencePunctuation()
     {

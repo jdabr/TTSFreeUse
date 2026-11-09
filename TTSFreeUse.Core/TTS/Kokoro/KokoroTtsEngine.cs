@@ -96,6 +96,41 @@ namespace TTSFreeUse.Core.TTS.Kokoro
         public string Status => _status;
         public KokoroModel Model => _model;
 
+        private Lazy<HashSet<string>?>? _lexicon;
+
+        /// <summary>
+        /// Whether a lowercase word is in the voice's pronunciation dictionary,
+        /// or null before the model is downloaded. Used to tell a heading word
+        /// in capitals ("WARNING") from an acronym to spell out ("GFCI").
+        /// </summary>
+        public bool? IsKnownWord(string word)
+        {
+            if (!IsReady)
+                return null;
+            _lexicon ??= new Lazy<HashSet<string>?>(LoadLexiconWords);
+            return _lexicon.Value?.Contains(word);
+        }
+
+        private HashSet<string>? LoadLexiconWords()
+        {
+            try
+            {
+                // Each line is "word phoneme phoneme …".
+                var words = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var line in File.ReadLines(_model.LexiconFile))
+                {
+                    var space = line.IndexOf(' ');
+                    if (space > 0)
+                        words.Add(line[..space]);
+                }
+                return words;
+            }
+            catch (IOException)
+            {
+                return null;
+            }
+        }
+
         /// <summary>
         /// Downloads the model if needed (~330 MB, first run only) and loads it.
         /// Safe to call more than once.
