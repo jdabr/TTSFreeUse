@@ -16,10 +16,8 @@
     <AssemblyName>TTSFreeUse</AssemblyName>
     <RootNamespace>TTSFreeUse.Desktop</RootNamespace>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>0.1.0</Version>
-    <Product>TTSFreeUse</Product>
+    <!-- Version, product name, and copyright come from Directory.Build.props. -->
     <Description>Free, offline text-to-speech for documents</Description>
-    <Copyright>Copyright (c) 2026 Jdabr</Copyright>
     <!-- Tray icons and the browser follow Windows' display scaling. -->
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <!-- Smaller download: English-only framework messages, no debug files. -->

@@ -1,7 +1,8 @@
 ﻿using System.Buffers.Binary;
 using Microsoft.CognitiveServices.Speech;
+using TTSFreeUse.Core.TTS;
 
-namespace TTSFreeUse.Core.TTS
+namespace TTSFreeUse.Azure
 {
     /// <summary>
     /// Optional cloud engine using Azure AI Speech. Requires an Azure account,

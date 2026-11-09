@@ -88,7 +88,13 @@ files and throw `ProtectedDocumentException` with a plain-language message
 
 Implement `ITtsEngine` in `TTSFreeUse.Core/TTS`. Engines return mono PCM
 samples as floats in [-1, 1] at their `SampleRate`, so audio from any engine
-is written the same way. Add a case for it in `Program.cs`.
+is written the same way. Add a case for it in `TTSFreeUse.Api/TTSFreeUseApp.cs`.
+
+Everything shipped in the Windows installer must be open source (an
+OSI-approved license). An engine that needs a closed-source SDK goes in its
+own project and is left out of installer builds, like `TTSFreeUse.Azure`
+(see `IncludeAzure` in `Directory.Build.props`). The installer build script
+fails if closed-source Azure files end up in the package.
 
 ## Project principles
 

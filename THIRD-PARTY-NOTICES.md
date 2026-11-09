@@ -14,7 +14,7 @@ It uses the following third-party components, each under its own license.
 | [Open XML SDK](https://github.com/dotnet/Open-XML-SDK) (`DocumentFormat.OpenXml`) | MIT | DOCX text extraction |
 | [SharpZipLib](https://github.com/icsharpcode/SharpZipLib) | MIT | Unpacking the downloaded voice model |
 | [Swashbuckle.AspNetCore](https://github.com/domaindrivendev/Swashbuckle.AspNetCore) | MIT | API documentation page |
-| [Azure Speech SDK](https://aka.ms/csspeech) (`Microsoft.CognitiveServices.Speech`) | [Microsoft Software License](https://aka.ms/csspeech/license) | Optional Azure cloud voices |
+| [Azure Speech SDK](https://aka.ms/csspeech) (`Microsoft.CognitiveServices.Speech`) | [Microsoft Software License](https://aka.ms/csspeech/license) (not open source) | Optional Azure cloud voices — **source builds only; not included in the Windows installer** |
 
 ## Included in the Windows installer
 

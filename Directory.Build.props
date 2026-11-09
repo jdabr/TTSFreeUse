@@ -1,0 +1,20 @@
+<Project>
+
+  <!-- Shared by every project, so all of TTSFreeUse's files carry the same
+       product name and version. Release builds pass -p:Version=x.y.z. -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <Product>TTSFreeUse</Product>
+    <Company>TTSFreeUse contributors</Company>
+    <Copyright>Copyright (c) 2026 Jdabr</Copyright>
+    <Authors>TTSFreeUse contributors</Authors>
+  </PropertyGroup>
+
+  <!-- The optional Azure cloud engine depends on Microsoft's closed-source
+       Speech SDK. It's included in builds from source, and left out of the
+       Windows installer (build-installer.ps1 passes -p:IncludeAzure=false). -->
+  <PropertyGroup>
+    <IncludeAzure Condition="'$(IncludeAzure)' == ''">true</IncludeAzure>
+  </PropertyGroup>
+
+</Project>

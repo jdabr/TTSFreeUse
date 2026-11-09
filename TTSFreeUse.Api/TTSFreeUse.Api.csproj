@@ -15,4 +15,12 @@
     <ProjectReference Include="..\TTSFreeUse.Core\TTSFreeUse.Core.csproj" />
   </ItemGroup>
 
+  <!-- Optional Azure engine; see Directory.Build.props. -->
+  <ItemGroup Condition="'$(IncludeAzure)' == 'true'">
+    <ProjectReference Include="..\TTSFreeUse.Azure\TTSFreeUse.Azure.csproj" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(IncludeAzure)' == 'true'">
+    <DefineConstants>$(DefineConstants);AZURE</DefineConstants>
+  </PropertyGroup>
+
 </Project>

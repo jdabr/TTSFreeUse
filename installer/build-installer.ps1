@@ -20,9 +20,21 @@ $publish = Join-Path $root "artifacts\publish\win-x64"
 
 Write-Host "Publishing TTSFreeUse $Version..."
 if (Test-Path $publish) { Remove-Item $publish -Recurse -Force }
-dotnet publish (Join-Path $root "TTSFreeUse.Desktop") -c Release -r win-x64 --self-contained `
-    -o $publish "-p:Version=$Version"
+# IncludeAzure=false: the installer ships only open-source components, so the
+# optional Azure engine (closed-source Microsoft Speech SDK) is left out.
+$desktop = Join-Path $root "TTSFreeUse.Desktop"
+# Restore explicitly with the same settings: switching IncludeAzure between
+# builds otherwise leaves a stale package cache behind.
+dotnet restore $desktop -r win-x64 "-p:IncludeAzure=false" --force
+if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed." }
+dotnet publish $desktop -c Release -r win-x64 --self-contained --no-restore `
+    -o $publish "-p:Version=$Version" "-p:IncludeAzure=false"
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed." }
+
+$closedSource = Get-ChildItem $publish -Recurse -Filter "*CognitiveServices*"
+if ($closedSource) {
+    throw "Closed-source files ended up in the package: $($closedSource.Name -join ', ')"
+}
 
 $iscc = @(
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",

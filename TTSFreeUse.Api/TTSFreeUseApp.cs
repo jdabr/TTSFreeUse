@@ -42,7 +42,8 @@ namespace TTSFreeUse.Api
                 (provider.GetRequiredService<ITtsEngine>() as KokoroTtsEngine) is { } kokoro ? kokoro.IsKnownWord : null));
 
             // The voice engine chosen in configuration ("Tts:Engine"). Kokoro is
-            // free and offline; Azure is optional and needs an Azure Speech key.
+            // free and offline; Azure is optional, needs an Azure Speech key,
+            // and is only available when running from source.
             services.AddSingleton<ITtsEngine>(provider =>
             {
                 var config = provider.GetRequiredService<IConfiguration>();
@@ -51,7 +52,13 @@ namespace TTSFreeUse.Api
                 {
                     "kokoro" => new KokoroTtsEngine(
                         config.GetSection("Tts:Kokoro").Get<KokoroOptions>() ?? new KokoroOptions()),
-                    "azure" => new AzureTtsEngine(config["Azure:SpeechKey"], config["Azure:SpeechRegion"]),
+#if AZURE
+                    "azure" => new Azure.AzureTtsEngine(config["Azure:SpeechKey"], config["Azure:SpeechRegion"]),
+#else
+                    "azure" => throw new InvalidOperationException(
+                        "Azure voices aren't included in this version of TTSFreeUse. Set Tts:Engine to " +
+                        "\"Kokoro\", or run TTSFreeUse from source to use Azure (see README.md)."),
+#endif
                     _ => throw new InvalidOperationException(
                         $"Unknown Tts:Engine '{engine}'. Use \"Kokoro\" or \"Azure\"."),
                 };

@@ -159,9 +159,12 @@ the Windows app:
 - `Ffmpeg:Path` — use a specific `ffmpeg` executable;
   `Ffmpeg:AllowDownload` — set to `false` to never download FFmpeg.
 
-### Optional: Azure cloud voices
+### Optional: Azure cloud voices (from source only)
 
-If you have an Azure AI Speech resource, you can use its voices instead. Set
+If you have an Azure AI Speech resource, you can use its voices instead when
+running from source. (The Windows installer leaves Azure out: it relies on
+Microsoft's closed-source Speech SDK, and the installer ships only
+open-source components.) Set
 `"Engine": "Azure"` and store your credentials as user secrets so they stay
 out of git:
 
@@ -180,6 +183,7 @@ Azure is a paid service and sends your text to Microsoft; Kokoro needs neither.
 | `TTSFreeUse.Core` | Text extraction, cleanup, chunking, voice engines, and audio output |
 | `TTSFreeUse.Api` | ASP.NET Core web app: the page and the API |
 | `TTSFreeUse.Desktop` | Windows app: runs the web app in the background with a tray icon |
+| `TTSFreeUse.Azure` | Optional Azure cloud engine (source builds only) |
 | `installer` | Windows installer (Inno Setup) and its build script |
 | `TTSFreeUse.Core.Tests` | Unit tests (`dotnet test`) |
 
@@ -203,6 +207,44 @@ If a book you need isn't readable, ask the publisher for an accessible edition
 (many provide one on request), or check services for people with print
 disabilities such as [Bookshare](https://www.bookshare.org) or your national
 library for the blind.
+
+## Privacy
+
+TTSFreeUse doesn't collect, upload, or share your documents, the text you
+paste, or the audio it makes. There's no account, no analytics, and no
+tracking. It only uses the internet to download two things it needs, from
+GitHub:
+
+- the voice model (once, the first time it starts), and
+- the FFmpeg audio converter (once, the first time you save an MP3 or M4B).
+
+These downloads contain no information about you or your documents (as with
+any download, GitHub sees your computer's IP address). Everything else
+happens on your computer and stays there.
+
+The one exception is the optional **Azure** engine, available only when
+running from source: if you turn it on, the text being read is sent to
+Microsoft's Azure Speech service. It's off unless you configure it, and it
+isn't included in the Windows installer.
+
+## Code signing policy
+
+Windows releases are built by
+[GitHub Actions](.github/workflows/release.yml) directly from this
+repository's tagged commits, and only files built from this project's own
+source code are signed. Every release is approved by hand before it's signed.
+
+<!-- When accepted by SignPath Foundation, add:
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+-->
+
+Team roles:
+
+- **Committers and reviewers:** [Jdabr](https://github.com/jdabr)
+- **Approvers:** [Jdabr](https://github.com/jdabr)
+
+Changes from other contributors are reviewed by a committer before they're
+merged. See [Privacy](#privacy) for what the program sends over the network.
 
 ## Contributing
 

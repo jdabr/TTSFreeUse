@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Optional Azure AI Speech engine (paid, cloud). Kept separate because the
+    Azure Speech SDK is closed source: it's included when running from source,
+    but never shipped in the Windows installer (built with -p:IncludeAzure=false).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CognitiveServices.Speech" Version="1.53.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TTSFreeUse.Core\TTSFreeUse.Core.csproj" />
+  </ItemGroup>
+
+</Project>

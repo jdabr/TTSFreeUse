@@ -1,8 +1,9 @@
 TTSFreeUse reads documents aloud: PDF, Word (DOCX), and text files, or text you paste in. It's made for people who can't read print or find reading hard.
 
 Free and private
-- Everything runs on this computer. Your documents are never uploaded.
-- No account, no subscription, no usage limits.
+- Everything runs on this computer. Your documents, text, and audio are never uploaded or shared.
+- No account, no subscription, no usage limits, no tracking.
+- TTSFreeUse only uses the internet to download the two things below from GitHub. These downloads contain no information about you or your documents.
 
 First start
 - The voice (about 330 MB) downloads once, the first time TTSFreeUse starts.
