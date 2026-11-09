@@ -36,6 +36,48 @@ namespace TTSFreeUse.Api.Controllers
         public IActionResult Voices() =>
             Ok(new { engine = Engine.Name, defaultVoice = Engine.DefaultVoice, voices = Engine.Voices });
 
+        // Short enough that a chunk is synthesized in a few seconds, long
+        // enough to hold a sentence or two so the voice keeps its flow.
+        internal const int ListenChunkLength = 300;
+
+        /// <summary>
+        /// Splits pasted text into short passages for live listening. The page
+        /// then requests audio for each passage with POST /api/speech/text and
+        /// plays them in order, so speech starts after the first passage.
+        /// </summary>
+        [HttpPost("prepare")]
+        [RequestSizeLimit(MaxUploadBytes)]
+        public IActionResult Prepare([FromBody] TextRequest request) =>
+            Prepared(request.Text, "Pasted text");
+
+        /// <summary>Like <c>prepare</c>, for an uploaded PDF, DOCX, or TXT file.</summary>
+        [HttpPost("prepare-file")]
+        [RequestSizeLimit(MaxUploadBytes)]
+        [RequestFormLimits(MultipartBodyLengthLimit = MaxUploadBytes)]
+        public async Task<IActionResult> PrepareFile(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest("No file uploaded.");
+            try
+            {
+                await using var stream = file.OpenReadStream();
+                var text = await _reader.ReadAsync(stream, file.FileName);
+                return Prepared(text, Path.GetFileNameWithoutExtension(file.FileName));
+            }
+            catch (DocumentReadException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        private IActionResult Prepared(string? rawText, string title)
+        {
+            var passages = _pipeline.Prepare(rawText ?? string.Empty, ListenChunkLength);
+            return passages.Count == 0
+                ? UnprocessableEntity("No readable text found. Scanned PDFs (images of pages) aren't supported yet.")
+                : Ok(new PreparedText(title, passages));
+        }
+
         /// <summary>Narrates an uploaded PDF, DOCX, or TXT file and returns a WAV file.</summary>
         [HttpPost("convert")]
         [RequestSizeLimit(MaxUploadBytes)]
@@ -98,6 +140,8 @@ namespace TTSFreeUse.Api.Controllers
     }
 
     public record TextRequest(string Text, string? Voice = null, float? Speed = null);
+
+    public record PreparedText(string Title, IReadOnlyList<string> Passages);
 
     internal static class RequestValidation
     {

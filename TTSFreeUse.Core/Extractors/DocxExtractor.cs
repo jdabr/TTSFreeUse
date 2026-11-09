@@ -1,6 +1,8 @@
 ﻿using System.Text;
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
+using M = DocumentFormat.OpenXml.Math;
 
 namespace TTSFreeUse.Core.Extractors
 {
@@ -48,9 +50,15 @@ namespace TTSFreeUse.Core.Extractors
         private static string ParagraphText(Paragraph paragraph)
         {
             var sb = new StringBuilder();
-            foreach (var element in paragraph.Descendants())
+            AppendText(paragraph, sb);
+            return sb.ToString();
+        }
+
+        private static void AppendText(OpenXmlElement element, StringBuilder sb)
+        {
+            foreach (var child in element.ChildElements)
             {
-                switch (element)
+                switch (child)
                 {
                     case Text t:
                         sb.Append(t.Text);
@@ -62,9 +70,16 @@ namespace TTSFreeUse.Core.Extractors
                     case CarriageReturn:
                         sb.Append(' ');
                         break;
+                    // Equations are stored as math markup, not text; read them
+                    // as words ("x squared plus …") instead of dropping them.
+                    case M.OfficeMath math:
+                        sb.Append(' ').Append(OmmlSpeech.Speak(math)).Append(' ');
+                        break;
+                    default:
+                        AppendText(child, sb);
+                        break;
                 }
             }
-            return sb.ToString();
         }
     }
 }

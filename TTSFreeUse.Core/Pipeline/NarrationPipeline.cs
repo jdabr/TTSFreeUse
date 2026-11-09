@@ -32,6 +32,13 @@ namespace TTSFreeUse.Core.Pipeline
         /// </summary>
         public List<string> Prepare(string rawText) => _chunker.Chunk(_cleaner.Clean(rawText));
 
+        /// <summary>
+        /// Like <see cref="Prepare(string)"/> but with a custom chunk size. Live
+        /// listening uses short chunks so the first audio is ready in seconds.
+        /// </summary>
+        public List<string> Prepare(string rawText, int maxChunkLength) =>
+            new TextChunker { MaxChunkLength = maxChunkLength }.Chunk(_cleaner.Clean(rawText));
+
         /// <summary>Synthesizes prepared chunks into WAV audio written to <paramref name="output"/>.</summary>
         /// <param name="output">Writable, seekable stream; left open.</param>
         public async Task<TimeSpan> NarrateAsync(IReadOnlyList<string> chunks, Stream output,

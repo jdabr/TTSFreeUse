@@ -76,6 +76,11 @@
   }
   .link.danger { color: var(--error); }
   .empty { color: var(--muted); margin: 0; }
+  .now-reading {
+    font-size: 1.15rem; line-height: 1.7; margin: 12px 0; padding: 12px 14px;
+    background: var(--bg); border-left: 3px solid var(--accent); border-radius: 6px;
+  }
+  .reader-actions { display: flex; gap: 16px; margin-left: auto; }
   footer { color: var(--muted); font-size: 0.85rem; text-align: center; margin-top: 24px; }
   footer a { color: inherit; }
   @media (max-width: 560px) { .actions { margin-left: 0; width: 100%; } .actions button { flex: 1; } }
@@ -127,6 +132,17 @@
 
   <section class="panel">
     <p class="status" id="status">Connecting…</p>
+    <div id="reader" hidden>
+      <p class="now-reading" id="now-reading"></p>
+      <div class="row">
+        <span class="meta" id="reader-progress"></span>
+        <span class="reader-actions">
+          <button class="link" id="pause">Pause</button>
+          <button class="link danger" id="stop">Stop</button>
+        </span>
+      </div>
+      <div class="bar"><div id="reader-bar" style="width:0"></div></div>
+    </div>
     <div id="player" hidden>
       <audio id="audio" controls></audio>
     </div>
@@ -194,10 +210,9 @@
     const hasInput = mode === 'text' ? $('text').value.trim().length > 0 : $('file').files.length > 0;
     $('listen').disabled = !ready || listening || !hasInput;
     $('save').disabled = !ready || !hasInput;
-    $('listen').hidden = mode === 'file';
     $('hint').textContent = mode === 'text'
-      ? '“Listen now” plays right away. “Save audio file” makes a file you can keep or copy to your phone.'
-      : 'Documents are converted in the background — you can keep using the page while it works.';
+      ? '“Listen now” starts reading in a few seconds. “Save audio file” makes a file you can keep or copy to your phone.'
+      : '“Listen now” reads the document here. “Save audio file” converts it in the background into a file you can keep.';
   }
 
   function updateCount() {
@@ -244,33 +259,137 @@
     }
   }
 
-  // ---------- listen now (instant) ----------
+  // ---------- listen now (live, passage by passage) ----------
+  // The server splits the text into short passages. We fetch audio for one
+  // passage at a time and queue it in the Web Audio API, so speech starts as
+  // soon as the first passage is ready and plays back-to-back from then on.
+  const PASSAGE_GAP = 0.25;   // seconds of silence between passages
+  const BUFFER_AHEAD = 30;    // don't generate more than this many seconds ahead
+  let session = null;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const wordCount = (s) => s.split(/\s+/).filter(Boolean).length;
+
   async function listenNow() {
+    stopListening();
+    $('audio').pause();
+    // Created during the click so the browser allows it to play sound.
+    const s = { abort: new AbortController(), ctx: new AudioContext(), passages: [], words: [],
+                scheduled: [], nextTime: 0, allLoaded: false, shown: -1, title: '' };
+    session = s;
     listening = true;
     updateButtons();
-    const started = Date.now();
-    const tick = setInterval(() =>
-      setStatus(`Generating speech… ${Math.round((Date.now() - started) / 1000)}s`), 500);
-    setStatus('Generating speech…');
+    setStatus(mode === 'text' ? 'Getting ready…' : 'Reading the document…');
+    const signal = s.abort.signal;
+    const json = { 'Content-Type': 'application/json' };
+
     try {
-      const res = await fetch('/api/speech/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: $('text').value, ...options() }),
-      });
-      if (!res.ok) { setStatus(await errorText(res) || `Something went wrong (${res.status}).`, true); return; }
-      playUrl(URL.createObjectURL(await res.blob()), true);
-      setStatus(`Done in ${((Date.now() - started) / 1000).toFixed(1)}s.`);
-    } catch (e) {
-      setStatus('Request failed: ' + e.message, true);
-    } finally {
-      clearInterval(tick);
+      let res;
+      if (mode === 'text') {
+        res = await fetch('/api/speech/prepare',
+          { method: 'POST', headers: json, body: JSON.stringify({ text: $('text').value }), signal });
+      } else {
+        const form = new FormData();
+        form.append('file', $('file').files[0]);
+        res = await fetch('/api/speech/prepare-file', { method: 'POST', body: form, signal });
+      }
+      if (!res.ok) return failListening(s, await errorText(res) || `Something went wrong (${res.status}).`);
+      const data = await res.json();
+      if (session !== s) return;
+
+      s.passages = data.passages;
+      s.words = s.passages.map(wordCount);
+      s.title = mode === 'file' ? data.title : '';
       listening = false;
       updateButtons();
+      $('reader').hidden = false;
+      $('pause').textContent = 'Pause';
+      $('now-reading').textContent = '';
+      s.timer = setInterval(() => updateReader(s), 200);
+      updateReader(s);
+
+      for (let i = 0; i < s.passages.length; i++) {
+        while (session === s && s.nextTime - s.ctx.currentTime > BUFFER_AHEAD) await sleep(300);
+        if (session !== s) return;
+
+        // Voice and speed are read each time, so changes apply from the next passage.
+        res = await fetch('/api/speech/text',
+          { method: 'POST', headers: json, body: JSON.stringify({ text: s.passages[i], ...options() }), signal });
+        if (!res.ok) return failListening(s, await errorText(res) || `Something went wrong (${res.status}).`);
+        const buffer = await s.ctx.decodeAudioData(await res.arrayBuffer());
+        if (session !== s) return;
+
+        const start = Math.max(s.nextTime, s.ctx.currentTime + 0.1);
+        const source = s.ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(s.ctx.destination);
+        source.start(start);
+        s.scheduled.push({ index: i, start, end: start + buffer.duration });
+        s.nextTime = start + buffer.duration + PASSAGE_GAP;
+      }
+      s.allLoaded = true;
+    } catch (e) {
+      if (e.name !== 'AbortError' && session === s) failListening(s, 'Request failed: ' + e.message);
+    } finally {
+      if (session === s || session === null) { listening = false; updateButtons(); }
     }
   }
 
+  function updateReader(s) {
+    if (session !== s) return;
+    const t = s.ctx.currentTime;
+    const total = s.passages.length;
+    const current = s.scheduled.find((p) => t >= p.start && t < p.end + PASSAGE_GAP);
+    const last = s.scheduled[s.scheduled.length - 1];
+
+    if (s.allLoaded && last && t >= last.end) {
+      stopListening();
+      setStatus(`Finished reading${s.title ? ' ' + s.title : ''}.`);
+      return;
+    }
+    if (current) {
+      if (s.shown !== current.index) {
+        s.shown = current.index;
+        $('now-reading').textContent = s.passages[current.index];
+      }
+      const wordsLeft = s.words.slice(current.index + 1).reduce((a, b) => a + b, 0);
+      const minutesLeft = wordsLeft / 150 / Number($('speed').value);
+      $('reader-progress').textContent = `Part ${current.index + 1} of ${total}` +
+        (wordsLeft ? ` · about ${minutesLeft < 1 ? 'a minute' : Math.round(minutesLeft) + ' min'} left` : '');
+      setStatus((s.ctx.state === 'suspended' ? 'Paused' : 'Reading') + (s.title ? ': ' + s.title : ''));
+    } else {
+      $('reader-progress').textContent = total ? `Part ${s.scheduled.length + 1} of ${total}` : '';
+      setStatus(s.scheduled.length ? 'Loading the next part…' : 'Starting…');
+    }
+    const done = current ? current.index : s.scheduled.length;
+    $('reader-bar').style.width = `${Math.round((done / Math.max(total, 1)) * 100)}%`;
+  }
+
+  function togglePause() {
+    const s = session;
+    if (!s) return;
+    if (s.ctx.state === 'running') { s.ctx.suspend(); $('pause').textContent = 'Resume'; }
+    else { s.ctx.resume(); $('pause').textContent = 'Pause'; }
+    updateReader(s);
+  }
+
+  function stopListening() {
+    const s = session;
+    session = null;
+    if (!s) return;
+    s.abort.abort();   // also stops the server generating the passage in progress
+    clearInterval(s.timer);
+    s.ctx.close().catch(() => {});
+    $('reader').hidden = true;
+  }
+
+  function failListening(s, message) {
+    if (session !== s) return;
+    stopListening();
+    setStatus(message, true);
+  }
+
   function playUrl(url, isBlob = false, label = null) {
+    stopListening();
     if (audioUrl && audioUrl.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
     audioUrl = url;
     $('audio').src = url;
@@ -405,6 +524,8 @@
     updateCount();
   });
   $('listen').addEventListener('click', listenNow);
+  $('pause').addEventListener('click', togglePause);
+  $('stop').addEventListener('click', () => { stopListening(); setStatus('Stopped.'); });
   $('save').addEventListener('click', saveFile);
   $('text').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !$('listen').disabled) listenNow();

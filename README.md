@@ -19,6 +19,9 @@ What it offers:
   Your documents never leave your machine.
 - **Book-aware cleanup:** removes running headers and page numbers, rejoins
   words hyphenated across lines, and fixes PDF ligatures and smart quotes.
+- **Reads Word equations aloud:** "x squared plus y squared equals z
+  squared", "a over b", "the square root of x". (Equations in PDFs aren't
+  understood yet.)
 
 > **Status:** early development. It currently runs as a local web API; a
 > simple app interface and one-click installers are planned.
@@ -36,7 +39,8 @@ dotnet run --project TTSFreeUse.Api
 On first run the voice model (~330 MB) downloads automatically — this happens
 once. Then open <http://localhost:5138>:
 
-- **Paste text → Listen now** to hear it right away.
+- **Listen now** starts reading pasted text or an uploaded document within a
+  few seconds, showing the passage being read, with pause and stop.
 - **Save audio file** (or **Upload file**) to turn text or a PDF/DOCX/TXT
   document into an **MP3** (plays everywhere) or **M4B** (audiobook apps
   remember your place). Long documents convert in the background with a
@@ -66,6 +70,8 @@ The web page uses a small HTTP API, also browsable at
 |---|---|
 | `GET /api/speech/status` | Whether the voice model is ready (shows download progress) |
 | `GET /api/speech/voices` | Available voices |
+| `POST /api/speech/prepare` | `{ "text": "..." }` → the cleaned text split into short passages for live listening |
+| `POST /api/speech/prepare-file` | Same, for an uploaded `.pdf`, `.docx`, or `.txt` file |
 | `POST /api/speech/text` | Instant: `{ "text": "...", "voice": "bf_emma", "speed": 1.1 }` → WAV audio |
 | `POST /api/speech/convert` | Instant: upload a `.pdf`, `.docx`, or `.txt` file → WAV audio |
 | `POST /api/jobs/text` | Background: `{ "text": "...", "format": "Mp3" }` → job |
