@@ -54,6 +54,7 @@ namespace TTSFreeUse.Core.Pipeline
             TtsOptions options, IProgress<NarrationProgress>? progress = null,
             CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             await using var wav = new WavWriter(output, _engine.SampleRate, leaveOpen: true);
 
             for (int i = 0; i < chunks.Count; i++)

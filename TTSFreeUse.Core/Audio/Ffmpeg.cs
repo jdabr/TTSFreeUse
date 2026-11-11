@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text;
+using TTSFreeUse.Core.Downloads;
 
 namespace TTSFreeUse.Core.Audio
 {
@@ -47,6 +47,9 @@ namespace TTSFreeUse.Core.Audio
         private readonly object _installLock = new();
         private Task<string>? _install;
 
+        /// <summary>How long the download may go without receiving data (overridable for tests).</summary>
+        internal TimeSpan StallTimeout { get; init; } = VerifiedDownload.DefaultStallTimeout;
+
         public Ffmpeg(FfmpegOptions options) : this(options, FfmpegPackage.WindowsDefault) { }
 
         public Ffmpeg(FfmpegOptions options, FfmpegPackage package, HttpClient? http = null)
@@ -83,16 +86,22 @@ namespace TTSFreeUse.Core.Audio
             if (File.Exists(downloaded))
                 return downloaded;
 
-            var pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-            foreach (var dir in pathVar.Split(System.IO.Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            return FindOnPath(Environment.GetEnvironmentVariable("PATH"), ExecutableName);
+        }
+
+        /// <summary>Looks for <paramref name="executable"/> in the folders listed in a PATH value.</summary>
+        internal static string? FindOnPath(string? pathVariable, string executable)
+        {
+            foreach (var entry in (pathVariable ?? "").Split(System.IO.Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
             {
-                try
-                {
-                    var candidate = System.IO.Path.Combine(dir.Trim('"'), ExecutableName);
-                    if (File.Exists(candidate))
-                        return candidate;
-                }
-                catch (ArgumentException) { } // malformed PATH entry
+                var dir = entry.Trim('"');
+                // A relative entry (like ".") means "whatever folder is current",
+                // which could be a Downloads folder holding a fake ffmpeg.exe.
+                if (!System.IO.Path.IsPathFullyQualified(dir))
+                    continue;
+                var candidate = System.IO.Path.Combine(dir, executable);
+                if (File.Exists(candidate))
+                    return candidate;
             }
             return null;
         }
@@ -107,7 +116,8 @@ namespace TTSFreeUse.Core.Audio
 
         /// <summary>
         /// Returns the path to FFmpeg, downloading it first if needed and allowed.
-        /// Concurrent callers share one download.
+        /// Concurrent callers share one download; <paramref name="cancellationToken"/>
+        /// stops this caller waiting for it without stopping it for the others.
         /// </summary>
         public Task<string> EnsureAvailableAsync(CancellationToken cancellationToken = default)
         {
@@ -118,51 +128,34 @@ namespace TTSFreeUse.Core.Audio
             if (!CanDownload)
                 return Task.FromException<string>(new InvalidOperationException(InstallInstructions));
 
+            Task<string> install;
             lock (_installLock)
             {
                 if (_install == null || _install.IsFaulted || _install.IsCanceled)
-                    _install = DownloadAsync(cancellationToken);
-                return _install;
+                    _install = Task.Run(DownloadAsync);
+                install = _install;
             }
+            return install.WaitAsync(cancellationToken);
         }
 
-        private async Task<string> DownloadAsync(CancellationToken cancellationToken)
+        private async Task<string> DownloadAsync()
         {
             Directory.CreateDirectory(ToolsDirectory);
             var archive = System.IO.Path.Combine(ToolsDirectory, $"ffmpeg-{_package.Version}.zip.partial");
             var staging = InstallDirectory + ".extracting";
 
-            var ownsClient = _http == null;
-            var http = _http ?? new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
             try
             {
                 Status = "Downloading audio converter (first time only)…";
-                using (var response = await http.GetAsync(_package.Url,
-                           HttpCompletionOption.ResponseHeadersRead, cancellationToken))
-                {
-                    response.EnsureSuccessStatusCode();
-                    var total = response.Content.Headers.ContentLength;
-                    await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
-                    await using var target = File.Create(archive);
-                    using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-
-                    var buffer = new byte[81920];
-                    long done = 0;
-                    int read;
-                    while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
+                await VerifiedDownload.DownloadAsync(_package.Url, archive, _package.Sha256, expectedBytes: null,
+                    "The downloaded audio converter failed its integrity check and was discarded. Please try again.",
+                    _http, StallTimeout,
+                    (done, total) =>
                     {
-                        await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                        hash.AppendData(buffer, 0, read);
-                        done += read;
                         if (total > 0)
                             Status = $"Downloading audio converter (first time only): {(double)done / total.Value:P0}";
-                    }
-
-                    var actual = Convert.ToHexString(hash.GetHashAndReset());
-                    if (!actual.Equals(_package.Sha256, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidDataException(
-                            "The downloaded audio converter failed its integrity check and was discarded. Please try again.");
-                }
+                    },
+                    CancellationToken.None);
 
                 Status = "Installing audio converter…";
                 if (Directory.Exists(staging))
@@ -197,11 +190,9 @@ namespace TTSFreeUse.Core.Audio
             }
             finally
             {
-                if (ownsClient)
-                    http.Dispose();
-                try { File.Delete(archive); } catch (IOException) { }
+                try { File.Delete(archive); } catch (IOException) { } catch (UnauthorizedAccessException) { }
                 if (Directory.Exists(staging))
-                    try { Directory.Delete(staging, recursive: true); } catch (IOException) { }
+                    try { Directory.Delete(staging, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
             }
         }
 
@@ -271,14 +262,17 @@ namespace TTSFreeUse.Core.Audio
             }
             catch (OperationCanceledException)
             {
-                try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-                try { File.Delete(output); } catch (IOException) { }
+                // Stop it, and let it close the half-written file before deleting it.
+                try { process.Kill(entireProcessTree: true); }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+                process.WaitForExit(TimeSpan.FromSeconds(5));
+                DeleteQuietly(output);
                 throw;
             }
 
             if (process.ExitCode != 0)
             {
-                try { File.Delete(output); } catch (IOException) { }
+                DeleteQuietly(output);
                 string details;
                 lock (stderr) details = stderr.ToString().Trim();
                 throw new InvalidOperationException(
@@ -287,5 +281,10 @@ namespace TTSFreeUse.Core.Audio
         }
 
         private static string Truncate(string s, int max) => s.Length <= max ? s : "…" + s[^max..];
+
+        private static void DeleteQuietly(string path)
+        {
+            try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
     }
 }

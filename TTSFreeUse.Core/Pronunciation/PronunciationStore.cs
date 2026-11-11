@@ -26,7 +26,7 @@ namespace TTSFreeUse.Core.Pronunciation
 
         public PronunciationStore(string? path = null)
         {
-            FilePath = string.IsNullOrWhiteSpace(path) ? DefaultPath : path;
+            FilePath = Path.GetFullPath(string.IsNullOrWhiteSpace(path) ? DefaultPath : path);
             Load();
         }
 
@@ -42,8 +42,9 @@ namespace TTSFreeUse.Core.Pronunciation
 
         /// <summary>Validates, saves, and starts using a new list.</summary>
         /// <exception cref="ArgumentException">With a message suitable for the user.</exception>
-        public void Replace(IEnumerable<PronunciationEntry> entries)
+        public void Replace(IEnumerable<PronunciationEntry?> entries)
         {
+            ArgumentNullException.ThrowIfNull(entries);
             var cleaned = Validate(entries);
             lock (_saveLock)
             {
@@ -63,34 +64,38 @@ namespace TTSFreeUse.Core.Pronunciation
 
         private void Load()
         {
-            if (!File.Exists(FilePath))
-                return;
+            // A damaged or unreadable file must never stop the app from
+            // starting: the list starts empty and the page shows why.
             try
             {
+                if (!File.Exists(FilePath))
+                    return;
                 var entries = JsonSerializer.Deserialize<List<PronunciationEntry>>(File.ReadAllText(FilePath)) ?? new();
                 _snapshot = Snapshot.Build(Validate(entries));
             }
-            catch (Exception ex) when (ex is JsonException or ArgumentException or IOException)
+            catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 LoadError = $"Couldn't read the pronunciation list at {FilePath}: {ex.Message}";
             }
         }
 
-        private static List<PronunciationEntry> Validate(IEnumerable<PronunciationEntry> entries)
+        private static List<PronunciationEntry> Validate(IEnumerable<PronunciationEntry?> entries)
         {
             var result = new List<PronunciationEntry>();
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // "NEC" and "nec" are the same word, unless both are match-case entries.
+            var anyCase = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var exactCase = new HashSet<string>(StringComparer.Ordinal);
             foreach (var entry in entries)
             {
-                var term = (entry.Term ?? "").Trim();
-                var sayAs = (entry.SayAs ?? "").Trim();
-                if (term.Length == 0)
+                var term = (entry?.Term ?? "").Trim();
+                var sayAs = (entry?.SayAs ?? "").Trim();
+                if (entry == null || term.Length == 0)
                     continue; // blank rows from the editor
                 if (term.Length > MaxTermLength)
                     throw new ArgumentException($"\"{term[..20]}…\" is too long (max {MaxTermLength} characters).");
                 if (sayAs.Length > MaxSayAsLength)
                     throw new ArgumentException($"What to say for \"{term}\" is too long (max {MaxSayAsLength} characters).");
-                if (!seen.Add(entry.MatchCase ? "case:" + term : term))
+                if (!(entry.MatchCase ? exactCase : anyCase).Add(term))
                     throw new ArgumentException($"\"{term}\" is in the list twice.");
                 result.Add(new PronunciationEntry(term, sayAs, entry.MatchCase));
             }

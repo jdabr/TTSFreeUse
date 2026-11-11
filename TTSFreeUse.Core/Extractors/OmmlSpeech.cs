@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using DocumentFormat.OpenXml;
 using TTSFreeUse.Core.Transformers;
 using M = DocumentFormat.OpenXml.Math;
@@ -15,32 +16,38 @@ namespace TTSFreeUse.Core.Extractors
     {
         public static string Speak(OpenXmlElement math) => MathSymbols.Tidy(Element(math));
 
-        private static string Element(OpenXmlElement? e) => e switch
+        private static string Element(OpenXmlElement? e)
         {
-            null => "",
-            M.Run run => RunText(run),
-            M.Fraction f => Fraction(f),
-            M.Superscript s => $"{Element(s.Base)} {Power(s.SuperArgument)}",
-            M.Subscript s => $"{Element(s.Base)} sub {Element(s.SubArgument)}",
-            M.SubSuperscript s => $"{Element(s.Base)} sub {Element(s.SubArgument)} {Power(s.SuperArgument)}",
-            M.PreSubSuper s => $"{Element(s.Base)} with pre-subscript {Element(s.SubArgument)} " +
-                               $"and pre-superscript {Element(s.SuperArgument)}",
-            M.Radical r => Radical(r),
-            M.Nary n => Nary(n),
-            M.Delimiter d => Delimiter(d),
-            M.MathFunction f => Function(f),
-            M.LimitLower l => LimitLower(l),
-            M.LimitUpper l => $"{Element(l.Base)} over {Element(l.Limit)}",
-            M.Accent a => Accent(a),
-            M.Bar b => $"{Element(b.Base)} bar",
-            M.Matrix m => Matrix(m),
-            M.EquationArray a => string.Join(" , ", a.Elements<M.Base>().Select(Element)) + " ,",
-            // Properties hold formatting only; never read them.
-            M.ControlProperties or M.RunProperties or OpenXmlLeafElement => "",
-            _ when e.LocalName.EndsWith("Pr", StringComparison.Ordinal) => "",
-            // Everything else (Base, OfficeMath, Box, Phantom, …): read the contents.
-            _ => Children(e),
-        };
+            // Turns absurdly deep nesting (a damaged or malicious file) into an
+            // ordinary error instead of a stack overflow, which would end the app.
+            RuntimeHelpers.EnsureSufficientExecutionStack();
+            return e switch
+            {
+                null => "",
+                M.Run run => RunText(run),
+                M.Fraction f => Fraction(f),
+                M.Superscript s => $"{Element(s.Base)} {Power(s.SuperArgument)}",
+                M.Subscript s => $"{Element(s.Base)} sub {Element(s.SubArgument)}",
+                M.SubSuperscript s => $"{Element(s.Base)} sub {Element(s.SubArgument)} {Power(s.SuperArgument)}",
+                M.PreSubSuper s => $"{Element(s.Base)} with pre-subscript {Element(s.SubArgument)} " +
+                                   $"and pre-superscript {Element(s.SuperArgument)}",
+                M.Radical r => Radical(r),
+                M.Nary n => Nary(n),
+                M.Delimiter d => Delimiter(d),
+                M.MathFunction f => Function(f),
+                M.LimitLower l => LimitLower(l),
+                M.LimitUpper l => $"{Element(l.Base)} over {Element(l.Limit)}",
+                M.Accent a => Accent(a),
+                M.Bar b => $"{Element(b.Base)} bar",
+                M.Matrix m => Matrix(m),
+                M.EquationArray a => string.Join(" , ", a.Elements<M.Base>().Select(Element)) + " ,",
+                // Properties hold formatting only; never read them.
+                M.ControlProperties or M.RunProperties or OpenXmlLeafElement => "",
+                _ when e.LocalName.EndsWith("Pr", StringComparison.Ordinal) => "",
+                // Everything else (Base, OfficeMath, Box, Phantom, …): read the contents.
+                _ => Children(e),
+            };
+        }
 
         private static string Children(OpenXmlElement e) =>
             string.Join(' ', e.ChildElements.Select(Element).Where(s => s.Length > 0));

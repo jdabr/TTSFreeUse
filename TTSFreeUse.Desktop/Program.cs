@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Connections;
 using TTSFreeUse.Api;
 using TTSFreeUse.Core.Jobs;
 
@@ -48,7 +49,8 @@ namespace TTSFreeUse.Desktop
             }
             catch (Exception ex)
             {
-                var message = ex is IOException
+                var portInUse = ex is AddressInUseException || ex.InnerException is AddressInUseException;
+                var message = portInUse
                     ? $"TTSFreeUse couldn't start because port {port} is already in use by another program.\n\n" +
                       "If you're running a developer copy (dotnet run), close it and try again."
                     : $"TTSFreeUse couldn't start:\n\n{ex.Message}";
@@ -81,7 +83,9 @@ namespace TTSFreeUse.Desktop
             {
                 var folder = ((AudioLibrary)app.Services.GetService(typeof(AudioLibrary))!).Directory;
                 Directory.CreateDirectory(folder);
-                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true });
+                // Full path, so an "explorer.exe" in the working folder is never started instead.
+                var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+                Process.Start(new ProcessStartInfo(explorer, $"\"{folder}\"") { UseShellExecute = true });
             });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Quit TTSFreeUse", null, (_, _) => Application.Exit());

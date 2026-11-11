@@ -39,5 +39,16 @@ namespace TTSFreeUse.Core.TTS
 
     /// <param name="Voice">Voice id from <see cref="ITtsEngine.Voices"/>; null for the default.</param>
     /// <param name="Speed">Speaking rate multiplier, 1.0 = normal.</param>
-    public record TtsOptions(string? Voice = null, float Speed = 1.0f);
+    public record TtsOptions(string? Voice = null, float Speed = 1.0f)
+    {
+        public const float MinSpeed = 0.5f;
+        public const float MaxSpeed = 2.0f;
+
+        /// <summary>
+        /// Whether <paramref name="speed"/> is a usable speaking rate. Rejects
+        /// "NaN", which form fields and JSON strings can carry as a number and
+        /// which crashes the voice engine.
+        /// </summary>
+        public static bool IsValidSpeed(float speed) => speed is >= MinSpeed and <= MaxSpeed;
+    }
 }

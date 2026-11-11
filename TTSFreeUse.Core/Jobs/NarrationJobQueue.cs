@@ -19,11 +19,18 @@ namespace TTSFreeUse.Core.Jobs
         /// <summary>Finished jobs kept in the list; older ones are dropped (their files stay in the library).</summary>
         public const int MaxFinishedJobs = 50;
 
+        /// <summary>Longest title kept (it also names the audio file and its tags).</summary>
+        public const int MaxTitleLength = 200;
+
         private readonly NarrationPipeline _pipeline;
         private readonly AudioLibrary _library;
         private readonly Ffmpeg _ffmpeg;
         private readonly Channel<NarrationJob> _queue = Channel.CreateUnbounded<NarrationJob>();
         private readonly ConcurrentDictionary<Guid, NarrationJob> _jobs = new();
+
+        // Makes "start" (by the worker) and "cancel before it starts" (by the
+        // user) one-or-the-other, so a cancelled job can never begin anyway.
+        private readonly object _startLock = new();
 
         public NarrationJobQueue(NarrationPipeline pipeline, AudioLibrary library, Ffmpeg ffmpeg)
         {
@@ -39,6 +46,8 @@ namespace TTSFreeUse.Core.Jobs
         /// </summary>
         public NarrationJob Enqueue(string title, string rawText, TtsOptions options, AudioFormat format)
         {
+            if (!Enum.IsDefined(format))
+                throw new ArgumentException($"Unknown audio format. Use one of: {string.Join(", ", Enum.GetNames<AudioFormat>())}.");
             if (format.NeedsEncoder() && !_ffmpeg.IsObtainable)
                 throw new ArgumentException(Ffmpeg.InstallInstructions);
             if (_jobs.Values.Count(j => j.IsActive) >= MaxActiveJobs)
@@ -50,7 +59,7 @@ namespace TTSFreeUse.Core.Jobs
                 throw new ArgumentException(
                     "No readable text found. Scanned PDFs (images of pages) aren't supported yet.");
 
-            var job = new NarrationJob(title, chunks, options, format);
+            var job = new NarrationJob(TidyTitle(title), chunks, options, format);
             _jobs[job.Id] = job;
             _queue.Writer.TryWrite(job);
 
@@ -69,11 +78,18 @@ namespace TTSFreeUse.Core.Jobs
 
         public bool Cancel(Guid id)
         {
-            if (!_jobs.TryGetValue(id, out var job) || !job.IsActive)
+            if (!_jobs.TryGetValue(id, out var job))
                 return false;
+            lock (_startLock)
+            {
+                if (!job.IsActive)
+                    return false;
+                // Not started yet: the worker will skip it.
+                if (job.State == JobState.Queued)
+                    Finish(job, JobState.Cancelled);
+            }
+            // Started: narration or conversion stops at the next opportunity.
             job.Cancellation.Cancel();
-            if (job.State == JobState.Queued)
-                Finish(job, JobState.Cancelled);
             return true;
         }
 
@@ -85,79 +101,92 @@ namespace TTSFreeUse.Core.Jobs
         public async Task RunAsync(CancellationToken stoppingToken)
         {
             await foreach (var job in _queue.Reader.ReadAllAsync(stoppingToken))
-            {
-                if (job.State != JobState.Queued)
-                    continue; // cancelled while waiting
                 await ProcessAsync(job, stoppingToken);
-            }
         }
 
+        /// <summary>Runs one job, unless it was cancelled before it could start.</summary>
         internal async Task ProcessAsync(NarrationJob job, CancellationToken stoppingToken)
         {
+            lock (_startLock)
+            {
+                if (job.State != JobState.Queued)
+                    return;
+                job.State = JobState.Narrating;
+            }
+            job.Started = DateTimeOffset.UtcNow;
+            job.StatusText = "Reading aloud…";
+
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, job.Cancellation.Token);
             var ct = linked.Token;
 
-            var tempWav = Path.Combine(Path.GetTempPath(), $"ttsfreeuse-{job.Id:N}.wav");
-            string? outputPath = null;
+            // The audio is put together in private temp files and only moved
+            // into the library once it's complete.
+            string? tempWav = null, tempEncoded = null;
             try
             {
-                job.State = JobState.Narrating;
-                job.Started = DateTimeOffset.UtcNow;
-                job.StatusText = "Reading aloud…";
-
-                await using (var wavStream = File.Create(tempWav))
+                await using (var wavStream = TempAudioFile.Create($"{job.Id:N}.wav"))
                 {
+                    tempWav = wavStream.Name;
                     var progress = new InlineProgress(p => job.ChunksDone = p.ChunksDone);
                     job.AudioDuration = await _pipeline.NarrateAsync(job.Chunks, wavStream, job.Options, progress, ct);
                 }
 
-                outputPath = _library.ReservePath(job.Title, job.Format);
+                var finished = tempWav;
                 if (job.Format.NeedsEncoder())
                 {
                     job.State = JobState.Encoding;
-                    job.StatusText = "Converting to " + job.Format.ToString().ToUpperInvariant() + "…";
+                    var converting = "Converting to " + job.Format.ToString().ToUpperInvariant() + "…";
+                    job.StatusText = converting;
                     var waitForConverter = _ffmpeg.EnsureAvailableAsync(ct);
-                    if (!waitForConverter.IsCompleted)
+                    // Show download progress if the converter is still being fetched.
+                    while (!waitForConverter.IsCompleted)
                     {
-                        // Surface download progress while waiting.
-                        while (!waitForConverter.IsCompleted)
-                        {
-                            job.StatusText = _ffmpeg.Status ?? job.StatusText;
-                            await Task.WhenAny(waitForConverter, Task.Delay(500, ct));
-                        }
-                        job.StatusText = "Converting to " + job.Format.ToString().ToUpperInvariant() + "…";
+                        job.StatusText = _ffmpeg.Status ?? converting;
+                        await Task.WhenAny(waitForConverter, Task.Delay(500, ct));
+                        ct.ThrowIfCancellationRequested();
                     }
                     await waitForConverter;
+                    job.StatusText = converting;
 
+                    await using (var encoded = TempAudioFile.Create($"{job.Id:N}{job.Format.Extension()}"))
+                        tempEncoded = encoded.Name;
                     var comment = $"Narrated by TTSFreeUse (voice: {job.Options.Voice ?? _pipeline.Engine.DefaultVoice})";
-                    await _ffmpeg.EncodeAsync(tempWav, outputPath, job.Format,
+                    await _ffmpeg.EncodeAsync(tempWav, tempEncoded, job.Format,
                         new AudioMetadata(job.Title, comment), ct);
-                }
-                else
-                {
-                    File.Copy(tempWav, outputPath, overwrite: true);
+                    finished = tempEncoded;
                 }
 
-                job.FileName = Path.GetFileName(outputPath);
+                ct.ThrowIfCancellationRequested();
+                job.FileName = Path.GetFileName(_library.Add(finished, job.Title, job.Format));
                 Finish(job, JobState.Completed);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                DeleteQuietly(outputPath);
                 Finish(job, JobState.Cancelled);
                 if (stoppingToken.IsCancellationRequested)
                     throw;
             }
             catch (Exception ex)
             {
-                DeleteQuietly(outputPath);
                 job.Error = ex.Message;
                 Finish(job, JobState.Failed);
             }
             finally
             {
                 DeleteQuietly(tempWav);
+                DeleteQuietly(tempEncoded);
             }
+        }
+
+        /// <summary>One line of at most <see cref="MaxTitleLength"/> characters, without control characters.</summary>
+        private static string TidyTitle(string title)
+        {
+            var words = new string(title.Select(c => char.IsControl(c) ? ' ' : c).ToArray())
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var tidy = string.Join(' ', words);
+            if (tidy.Length > MaxTitleLength)
+                tidy = tidy[..MaxTitleLength].TrimEnd();
+            return tidy.Length > 0 ? tidy : "Narration";
         }
 
         private void Finish(NarrationJob job, JobState state)

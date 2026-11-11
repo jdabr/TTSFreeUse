@@ -1,6 +1,6 @@
 using System.Formats.Tar;
-using System.Security.Cryptography;
 using ICSharpCode.SharpZipLib.BZip2;
+using TTSFreeUse.Core.Downloads;
 
 namespace TTSFreeUse.Core.TTS.Kokoro
 {
@@ -25,8 +25,8 @@ namespace TTSFreeUse.Core.TTS.Kokoro
         /// </summary>
         public const string DownloadSha256 = "60703707bc05ccd48d60e1eb723f38b07d6e474795a0b6a588d7220400e0f7a4";
 
-        /// <summary>Archive size, used for progress when the server sends no length.</summary>
-        private const long ExpectedDownloadBytes = 349_886_476;
+        /// <summary>Archive size. A server offering a different size is offering a different file.</summary>
+        public const long DownloadBytes = 349_886_476;
 
         // Files the engine needs; if any is missing the model is (re)downloaded.
         private static readonly string[] RequiredFiles =
@@ -43,8 +43,10 @@ namespace TTSFreeUse.Core.TTS.Kokoro
         public string LexiconFile => Path.Combine(Directory, "lexicon-us-en.txt");
         public string EspeakDataDir => Path.Combine(Directory, "espeak-ng-data");
 
-        /// <summary>The checksum a download must match (overridable for tests).</summary>
+        // What a download must match, and how long it may stall (overridable for tests).
         internal string ExpectedSha256 { get; init; } = DownloadSha256;
+        internal long? ExpectedBytes { get; init; } = DownloadBytes;
+        internal TimeSpan StallTimeout { get; init; } = VerifiedDownload.DefaultStallTimeout;
 
         public KokoroModel(string? modelsRoot = null)
         {
@@ -80,7 +82,11 @@ namespace TTSFreeUse.Core.TTS.Kokoro
 
             try
             {
-                await DownloadAsync(archive, ExpectedSha256, progress, http, cancellationToken);
+                await VerifiedDownload.DownloadAsync(DownloadUrl, archive, ExpectedSha256, ExpectedBytes,
+                    "The downloaded voice model wasn't the expected version and was discarded. TTSFreeUse " +
+                    "will try again; if this keeps happening, check for a newer version of TTSFreeUse.",
+                    http, StallTimeout, (done, total) => progress?.Report(Math.Min(1.0, (double)done / (total ?? DownloadBytes))),
+                    cancellationToken);
 
                 if (System.IO.Directory.Exists(staging))
                     System.IO.Directory.Delete(staging, recursive: true);
@@ -110,46 +116,6 @@ namespace TTSFreeUse.Core.TTS.Kokoro
                 TryDelete(archive);
                 if (System.IO.Directory.Exists(staging))
                     try { System.IO.Directory.Delete(staging, recursive: true); } catch (IOException) { }
-            }
-        }
-
-        private static async Task DownloadAsync(string path, string expectedSha256, IProgress<double>? progress,
-            HttpClient? http, CancellationToken cancellationToken)
-        {
-            var ownsClient = http == null;
-            http ??= new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
-            try
-            {
-                using var response = await http.GetAsync(DownloadUrl,
-                    HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                response.EnsureSuccessStatusCode();
-
-                var total = response.Content.Headers.ContentLength ?? ExpectedDownloadBytes;
-                await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
-                await using var target = File.Create(path);
-                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-
-                var buffer = new byte[81920];
-                long done = 0;
-                int read;
-                while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
-                {
-                    await target.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                    hash.AppendData(buffer, 0, read);
-                    done += read;
-                    progress?.Report(Math.Min(1.0, (double)done / total));
-                }
-
-                var actual = Convert.ToHexString(hash.GetHashAndReset());
-                if (!actual.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException(
-                        "The downloaded voice model didn't match the expected version and was discarded. " +
-                        "Please try again later; if this keeps happening, update TTSFreeUse.");
-            }
-            finally
-            {
-                if (ownsClient)
-                    http.Dispose();
             }
         }
 

@@ -69,7 +69,8 @@ namespace TTSFreeUse.Core.TTS.Kokoro
         private readonly KokoroOptions _options;
         private readonly SemaphoreSlim _initLock = new(1, 1);
         private readonly SemaphoreSlim _synthLock = new(1, 1);
-        private OfflineTts? _tts;
+        private volatile OfflineTts? _tts;
+        private volatile bool _disposed;
         private volatile string _status = "Not started.";
 
         public KokoroTtsEngine(KokoroOptions options)
@@ -136,13 +137,14 @@ namespace TTSFreeUse.Core.TTS.Kokoro
         /// </summary>
         public async Task InitializeAsync(CancellationToken cancellationToken = default)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             if (_tts != null)
                 return;
 
             await _initLock.WaitAsync(cancellationToken);
             try
             {
-                if (_tts != null)
+                if (_tts != null || _disposed)
                     return;
 
                 if (!_model.IsInstalled())
@@ -157,7 +159,8 @@ namespace TTSFreeUse.Core.TTS.Kokoro
                 _tts = await Task.Run(() => new OfflineTts(BuildConfig()), cancellationToken);
                 _status = "Ready.";
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            // Anything but the caller giving up, including a download timing out.
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
             {
                 _status = $"Voice model failed to load: {ex.Message}";
                 throw;
@@ -171,22 +174,29 @@ namespace TTSFreeUse.Core.TTS.Kokoro
         public async Task<float[]> SynthesizeAsync(string text, TtsOptions options,
             CancellationToken cancellationToken = default)
         {
-            await InitializeAsync(cancellationToken);
-
+            // Checked before anything reaches the native engine, which fails on
+            // bad input in ways .NET can't always catch.
+            if (!TtsOptions.IsValidSpeed(options.Speed))
+                throw new ArgumentOutOfRangeException(nameof(options), options.Speed,
+                    $"Speed must be between {TtsOptions.MinSpeed} and {TtsOptions.MaxSpeed}.");
             var voiceId = options.Voice ?? DefaultVoice;
             var speakerId = Array.IndexOf(EnglishVoiceIds, voiceId);
             if (speakerId < 0)
                 throw new ArgumentException($"Unknown voice '{voiceId}'.", nameof(options));
+
+            await InitializeAsync(cancellationToken);
 
             // One synthesis at a time: the model already uses multiple threads,
             // and running several at once only adds memory pressure.
             await _synthLock.WaitAsync(cancellationToken);
             try
             {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                var tts = _tts!;
                 return await Task.Run(() =>
                 {
                     // OfflineTtsGeneratedAudio has Dispose() but isn't IDisposable.
-                    var audio = _tts!.Generate(text, Math.Clamp(options.Speed, 0.5f, 2.0f), speakerId);
+                    var audio = tts.Generate(text, options.Speed, speakerId);
                     try { return audio.Samples; }
                     finally { audio.Dispose(); }
                 }, cancellationToken);
@@ -217,9 +227,20 @@ namespace TTSFreeUse.Core.TTS.Kokoro
 
         public void Dispose()
         {
-            _tts?.Dispose();
-            _initLock.Dispose();
-            _synthLock.Dispose();
+            if (_disposed)
+                return;
+            _disposed = true;
+
+            // Speech in progress can't be interrupted, and freeing the native
+            // engine under it crashes the app. So if someone quits while
+            // TTSFreeUse is still reading aloud, the engine is left for the
+            // operating system to free when the process exits.
+            if (_synthLock.Wait(TimeSpan.Zero))
+            {
+                _tts?.Dispose();
+                _tts = null;
+                _synthLock.Release();
+            }
         }
     }
 }

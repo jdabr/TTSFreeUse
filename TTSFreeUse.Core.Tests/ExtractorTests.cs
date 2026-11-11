@@ -26,6 +26,53 @@ public class DocxExtractorTests
 
     private static W.Paragraph Para(params OpenXmlElement[] runContent) => new(new W.Run(runContent));
 
+    /// <summary>Builds a .docx whose body is the given WordprocessingML, as Word itself would write it.</summary>
+    internal static MemoryStream BuildDocxXml(string bodyXml)
+    {
+        var ms = new MemoryStream();
+        using (var doc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document, true))
+        {
+            var xml = "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" " +
+                      "xmlns:m=\"http://schemas.openxmlformats.org/officeDocument/2006/math\" " +
+                      "xmlns:mc=\"http://schemas.openxmlformats.org/markup-compatibility/2006\" " +
+                      "xmlns:wps=\"http://schemas.microsoft.com/office/word/2010/wordprocessingShape\" " +
+                      "xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\" " +
+                      "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" " +
+                      "xmlns:v=\"urn:schemas-microsoft-com:vml\" mc:Ignorable=\"wps\">" +
+                      $"<w:body>{bodyXml}</w:body></w:document>";
+            doc.AddMainDocumentPart().FeedData(new MemoryStream(Encoding.UTF8.GetBytes(xml)));
+        }
+        ms.Position = 0;
+        return ms;
+    }
+
+    [Fact]
+    public async Task TextBoxesAreReadOnceAfterTheirParagraph()
+    {
+        // Word saves every text box twice: a current copy (mc:Choice) and a
+        // fallback copy for old versions of Word (mc:Fallback).
+        const string box = "<w:txbxContent><w:p><w:r><w:t>Inside the box.</w:t></w:r></w:p></w:txbxContent>";
+        using var docx = BuildDocxXml(
+            "<w:p><w:r><w:t xml:space=\"preserve\">Before. </w:t></w:r><w:r><mc:AlternateContent>" +
+            $"<mc:Choice Requires=\"wps\"><w:drawing><wp:anchor><a:graphic><a:graphicData><wps:wsp><wps:txbx>{box}</wps:txbx></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice>" +
+            $"<mc:Fallback><w:pict><v:shape><v:textbox>{box}</v:textbox></v:shape></w:pict></mc:Fallback>" +
+            "</mc:AlternateContent></w:r><w:r><w:t>After.</w:t></w:r></w:p>");
+
+        Assert.Equal("Before. After.\n\nInside the box.", await new DocxExtractor().ExtractAsync(docx));
+    }
+
+    [Fact]
+    public async Task TrackedMovesAreReadOnlyWhereTheTextWentTo()
+    {
+        // With tracked changes on, moved text is stored at both its old and new place.
+        using var docx = BuildDocx(new W.Paragraph(
+            new W.MoveFromRun(new W.Run(new W.Text("Moved words. "))),
+            new W.Run(new W.Text("Other words. ")),
+            new W.MoveToRun(new W.Run(new W.Text("Moved words.")))));
+
+        Assert.Equal("Other words. Moved words.", await new DocxExtractor().ExtractAsync(docx));
+    }
+
     [Fact]
     public async Task SeparatesParagraphs()
     {

@@ -109,11 +109,13 @@ The web page uses a small HTTP API, also browsable at
 
 `voice`, `speed` (0.5–2.0), and `format` (`Mp3`, `M4b`, `Wav`) are optional.
 
-The API has no login, so it only listens on your own computer (`localhost`)
-and refuses requests sent by other websites open in your browser. Scripts and
-tools like `curl` on the same computer work normally. Making it reachable from
-other devices (by changing `AllowedHosts` and the listening address) would let
-anyone on your network use it, so that isn't recommended.
+The API has no login, so it only listens on your own computer (`localhost`),
+refuses connections from other devices even if the listening address is
+changed, and refuses requests sent by other websites open in your browser.
+Scripts and tools like `curl` on the same computer work normally. Other people
+signed in to the same computer at the same time (with Windows' "Switch user")
+could reach it too, so on a shared computer, quit TTSFreeUse from its tray
+icon when you're done.
 
 ### Speed
 

@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using TTSFreeUse.Core.TTS;
 
 namespace TTSFreeUse.Api
@@ -9,8 +11,6 @@ namespace TTSFreeUse.Api
     /// </summary>
     public class EngineWarmupService : BackgroundService
     {
-        private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(30);
-
         private readonly ITtsEngine _engine;
         private readonly ILogger<EngineWarmupService> _logger;
 
@@ -20,9 +20,18 @@ namespace TTSFreeUse.Api
             _logger = logger;
         }
 
+        /// <summary>
+        /// The wait before trying again after <paramref name="failures"/> failed
+        /// attempts: 30 seconds, doubling up to 5 minutes. A failure partway
+        /// through the 330 MB download costs real data on a metered connection,
+        /// so the retries slow down instead of repeating every 30 seconds forever.
+        /// </summary>
+        internal static TimeSpan RetryDelay(int failures) =>
+            TimeSpan.FromSeconds(Math.Min(30 * Math.Pow(2, Math.Max(failures, 1) - 1), 300));
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            while (!stoppingToken.IsCancellationRequested)
+            for (int failures = 1; !stoppingToken.IsCancellationRequested; failures++)
             {
                 try
                 {
@@ -37,9 +46,9 @@ namespace TTSFreeUse.Api
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Voice engine failed to start; retrying in {Delay}s.",
-                        RetryDelay.TotalSeconds);
-                    await Task.Delay(RetryDelay, stoppingToken);
+                    var delay = RetryDelay(failures);
+                    _logger.LogError(ex, "Voice engine failed to start; retrying in {Delay}s.", delay.TotalSeconds);
+                    await Task.Delay(delay, stoppingToken);
                 }
             }
         }

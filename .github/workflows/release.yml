@@ -31,8 +31,10 @@ jobs:
       - name: Run tests
         run: dotnet test
 
+      # Pinned like the actions above: a specific, reviewed version builds the
+      # installer, not whatever the package feed has that day.
       - name: Install Inno Setup
-        run: choco install innosetup --no-progress -y
+        run: choco install innosetup --version=6.7.1 --no-progress -y
 
       - name: Build installer
         shell: pwsh

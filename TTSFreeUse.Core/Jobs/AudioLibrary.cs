@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using TTSFreeUse.Core.Audio;
 
 namespace TTSFreeUse.Core.Jobs
@@ -50,6 +51,7 @@ namespace TTSFreeUse.Core.Jobs
             if (string.IsNullOrWhiteSpace(fileName)
                 || fileName != Path.GetFileName(fileName)
                 || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+                || IsReservedName(fileName)
                 || !AudioFormats.TryFromExtension(Path.GetExtension(fileName), out _))
                 return null;
 
@@ -57,6 +59,10 @@ namespace TTSFreeUse.Core.Jobs
             return File.Exists(path) ? path : null;
         }
 
+        /// <summary>
+        /// Deletes a file from the library. Returns false if there's no such
+        /// file; throws <see cref="IOException"/> if another program has it open.
+        /// </summary>
         public bool Delete(string fileName)
         {
             var path = Resolve(fileName);
@@ -67,29 +73,34 @@ namespace TTSFreeUse.Core.Jobs
         }
 
         /// <summary>
-        /// Picks an unused file name like "Electrical Code Ch 3.mp3", adding
-        /// " (2)", " (3)"… if needed. Creates the library folder.
+        /// Moves a finished audio file into the library, named after
+        /// <paramref name="title"/> ("Electrical Code Ch 3.mp3", or " (2)", " (3)"…
+        /// if that's taken), and returns its new path. Creates the library folder.
+        /// Files are only moved in once complete, so the library never lists a
+        /// half-written one.
         /// </summary>
-        public string ReservePath(string title, AudioFormat format)
+        public string Add(string finishedFile, string title, AudioFormat format)
         {
             System.IO.Directory.CreateDirectory(Directory);
             var baseName = SafeName(title);
             var ext = format.Extension();
 
-            for (int n = 1; ; n++)
+            for (int n = 1; n <= 10_000; n++)
             {
-                var name = n == 1 ? baseName + ext : $"{baseName} ({n}){ext}";
-                var path = Path.Combine(Directory, name);
+                var path = Path.Combine(Directory, n == 1 ? baseName + ext : $"{baseName} ({n}){ext}");
+                if (File.Exists(path))
+                    continue;
                 try
                 {
-                    // CreateNew makes the reservation atomic between concurrent jobs.
-                    using (new FileStream(path, FileMode.CreateNew)) { }
+                    File.Move(finishedFile, path, overwrite: false);
                     return path;
                 }
                 catch (IOException) when (File.Exists(path))
                 {
+                    // Another file took that name in the meantime; try the next.
                 }
             }
+            throw new IOException($"There are too many files named \"{baseName}\" in {Directory}.");
         }
 
         public static string SafeName(string title)
@@ -99,7 +110,18 @@ namespace TTSFreeUse.Core.Jobs
             cleaned = string.Join(' ', cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries)).Trim(' ', '.');
             if (cleaned.Length > 80)
                 cleaned = cleaned[..80].TrimEnd(' ', '.');
+            if (IsReservedName(cleaned))
+                cleaned = "_" + cleaned;
             return cleaned.Length > 0 ? cleaned : "Narration";
         }
+
+        // Names Windows 10 and earlier treat as devices rather than files, with
+        // or without an extension: "NUL.mp3" would write to nowhere and
+        // "COM1.mp3" to a serial port.
+        private static readonly Regex ReservedName = new(
+            @"^(CON|PRN|AUX|NUL|COM[0-9¹²³]|LPT[0-9¹²³]|CONIN\$|CONOUT\$)(\..*)?$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        private static bool IsReservedName(string name) => ReservedName.IsMatch(name);
     }
 }

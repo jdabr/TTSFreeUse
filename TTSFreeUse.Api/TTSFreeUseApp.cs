@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http.Features;
+using TTSFreeUse.Api.Controllers;
 using TTSFreeUse.Core.Audio;
 using TTSFreeUse.Core.Extractors;
 using TTSFreeUse.Core.Jobs;
@@ -17,10 +19,22 @@ namespace TTSFreeUse.Api
     {
         public const int DefaultPort = 5138;
 
+        /// <summary>The only host names the server answers to (see LocalOnlyProtection).</summary>
+        public const string LocalHostNames = "localhost;127.0.0.1;[::1]";
+
         public static WebApplication Create(string[] args, WebApplicationOptions? options = null)
         {
             var builder = WebApplication.CreateBuilder(options ?? new WebApplicationOptions { Args = args });
             var services = builder.Services;
+
+            // Normally set in appsettings.json; this keeps the protection if that file is missing.
+            if (string.IsNullOrEmpty(builder.Configuration["AllowedHosts"]))
+                builder.Configuration["AllowedHosts"] = LocalHostNames;
+
+            // Uploaded documents stay in memory instead of being buffered to temp
+            // files on disk, where other users could read them on a shared Linux
+            // computer (and where a crash would leave a copy behind).
+            services.Configure<FormOptions>(o => o.MemoryBufferThreshold = (int)SpeechController.MaxUploadBytes);
 
             // Text extraction
             services.AddSingleton<ITextExtractor, PdfExtractor>();
@@ -75,13 +89,13 @@ namespace TTSFreeUse.Api
             services.AddSingleton<NarrationJobQueue>();
             services.AddHostedService<JobWorkerService>();
 
-            // Accept and return formats as names ("Mp3"), not numbers. The
-            // controllers live in this assembly, which may not be the entry
-            // assembly (the Windows launcher hosts this app).
+            // Accept and return formats as names ("Mp3") only: a number such as 7
+            // isn't a format. The controllers live in this assembly, which may
+            // not be the entry assembly (the Windows launcher hosts this app).
             services.AddControllers()
                 .AddApplicationPart(typeof(TTSFreeUseApp).Assembly)
                 .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(
-                    new System.Text.Json.Serialization.JsonStringEnumConverter()));
+                    new System.Text.Json.Serialization.JsonStringEnumConverter(allowIntegerValues: false)));
             services.AddEndpointsApiExplorer();
             services.AddSwaggerGen();
 
@@ -99,9 +113,15 @@ namespace TTSFreeUse.Api
             // No HTTPS redirection: the app runs locally on the user's own machine
             // (http://localhost), where it adds nothing but a startup warning.
 
-            // Serves the web page in wwwroot (index.html at "/").
+            // Serves the web page in wwwroot (index.html at "/"). "no-cache" makes
+            // the browser check for a newer copy each time (cheap on this
+            // computer), so after an update it never runs the old page's script
+            // against the new server.
             app.UseDefaultFiles();
-            app.UseStaticFiles();
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                OnPrepareResponse = file => file.Context.Response.Headers.CacheControl = "no-cache",
+            });
 
             app.UseAuthorization();
             app.MapControllers();

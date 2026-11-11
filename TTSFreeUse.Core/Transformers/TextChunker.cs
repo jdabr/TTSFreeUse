@@ -63,24 +63,28 @@ namespace TTSFreeUse.Core.Transformers
 
         private static IEnumerable<string> Sentences(string paragraph)
         {
-            string? pending = null;
+            // The sentence so far, and the last piece added to it. Only the last
+            // piece is checked for an abbreviation at its end (that's where the
+            // sentence ends), so long runs of merged pieces stay fast.
+            var sentence = new StringBuilder();
+            string? last = null;
             foreach (var part in SentenceBoundary.Split(paragraph))
             {
-                if (pending == null)
-                    pending = part;
                 // Keep "Fig." with "3-2", and "5 in." with "long" (a lowercase
                 // or numeric start means the sentence didn't really end).
-                else if (AbbreviationAtEnd.IsMatch(pending) ||
-                         (part.Length > 0 && (char.IsLower(part[0]) || char.IsDigit(part[0]))))
-                    pending += " " + part;
-                else
+                if (last != null && !AbbreviationAtEnd.IsMatch(last) &&
+                    !(part.Length > 0 && (char.IsLower(part[0]) || char.IsDigit(part[0]))))
                 {
-                    yield return pending;
-                    pending = part;
+                    yield return sentence.ToString();
+                    sentence.Clear();
                 }
+                if (sentence.Length > 0)
+                    sentence.Append(' ');
+                sentence.Append(part);
+                last = part;
             }
-            if (pending != null)
-                yield return pending;
+            if (last != null)
+                yield return sentence.ToString();
         }
 
         // Breaks an over-long sentence at clause punctuation, then at spaces,

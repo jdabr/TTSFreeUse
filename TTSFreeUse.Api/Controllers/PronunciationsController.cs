@@ -42,7 +42,7 @@ namespace TTSFreeUse.Api.Controllers
             {
                 return BadRequest(ex.Message);
             }
-            catch (IOException ex)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 return Problem($"Couldn't save the pronunciation list: {ex.Message}");
             }

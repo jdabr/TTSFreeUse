@@ -26,12 +26,15 @@
     <ProjectReference Include="..\TTSFreeUse.Core\TTSFreeUse.Core.csproj" />
   </ItemGroup>
 
-  <!-- The web app's security checks are compiled in directly rather than
+  <!-- The web app's files under test are compiled in directly rather than
        referencing TTSFreeUse.Api, so tests still build while a developer copy
        of the app is running (it locks the Api build output). -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <Compile Include="..\TTSFreeUse.Api\LocalOnlyProtection.cs" Link="Linked\LocalOnlyProtection.cs" />
+    <Compile Include="..\TTSFreeUse.Api\EngineWarmupService.cs" Link="Linked\EngineWarmupService.cs" />
+    <Compile Include="..\TTSFreeUse.Api\Controllers\SpeechController.cs" Link="Linked\SpeechController.cs" />
+    <Compile Include="..\TTSFreeUse.Api\Controllers\LibraryController.cs" Link="Linked\LibraryController.cs" />
   </ItemGroup>
 
 </Project>

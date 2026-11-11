@@ -129,6 +129,20 @@ public class NarrationPipelineTests
         Assert.Single(engine.Calls);
     }
 
+    [Fact]
+    public async Task DoesNothingWhenAlreadyCancelled()
+    {
+        var engine = new FakeEngine();
+        var output = new MemoryStream();
+
+        // Even with nothing to read, a cancelled narration mustn't "succeed".
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Pipeline(engine).NarrateAsync(Array.Empty<string>(), output, new TtsOptions(),
+                cancellationToken: new CancellationToken(canceled: true)));
+        Assert.Empty(engine.Calls);
+        Assert.Equal(0, output.Length);
+    }
+
     /// <summary>IProgress that reports synchronously (Progress&lt;T&gt; posts asynchronously).</summary>
     private class SyncProgress<T>(Action<T> report) : IProgress<T>
     {
@@ -179,6 +193,56 @@ public class KokoroEngineTests
     public void RejectsUnknownDefaultVoice()
     {
         Assert.Throws<ArgumentException>(() => new KokoroTtsEngine(new KokoroOptions { DefaultVoice = "nope" }));
+    }
+
+    [Theory]
+    [InlineData(float.NaN)] // made the native engine throw an SEHException
+    [InlineData(0.1f)]
+    [InlineData(5f)]
+    public async Task RefusesUnusableSpeedsBeforeLoadingAnything(float speed)
+    {
+        using var dir = new TempDir();
+        using var engine = new KokoroTtsEngine(new KokoroOptions { ModelsDirectory = dir.Path });
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            engine.SynthesizeAsync("Hello.", new TtsOptions(Speed: speed), TestContext.Current.CancellationToken));
+        Assert.Empty(Directory.GetFileSystemEntries(dir.Path)); // no model download was started
+    }
+
+    [Theory]
+    [InlineData(float.NaN, false)]
+    [InlineData(float.NegativeInfinity, false)]
+    [InlineData(0.49f, false)]
+    [InlineData(0.5f, true)]
+    [InlineData(1.0f, true)]
+    [InlineData(2.0f, true)]
+    [InlineData(2.01f, false)]
+    public void OnlyUsableSpeedsAreValid(float speed, bool valid) =>
+        Assert.Equal(valid, TtsOptions.IsValidSpeed(speed));
+
+    /// <summary>
+    /// Quitting while TTSFreeUse is reading aloud used to free the voice engine
+    /// in the middle of speech, crashing the app (access violation). Runs only
+    /// with TTSFREEUSE_MODELS_DIR set, like <see cref="SynthesizesSpeech"/>.
+    /// </summary>
+    [Fact]
+    public async Task QuittingWhileSpeakingDoesNotCrash()
+    {
+        var dir = Environment.GetEnvironmentVariable("TTSFREEUSE_MODELS_DIR");
+        Assert.SkipWhen(string.IsNullOrEmpty(dir) || !new KokoroModel(dir).IsInstalled(),
+            "Set TTSFREEUSE_MODELS_DIR to a folder containing the Kokoro model to run this test.");
+        var ct = TestContext.Current.CancellationToken;
+
+        var engine = new KokoroTtsEngine(new KokoroOptions { ModelsDirectory = dir });
+        await engine.InitializeAsync(ct);
+        var longText = string.Join(" ", Enumerable.Repeat("The quick brown fox jumps over the lazy dog by the river.", 12));
+        var speaking = engine.SynthesizeAsync(longText, new TtsOptions(), ct);
+        await Task.Delay(1500, ct); // well into the native call
+
+        engine.Dispose();
+
+        Assert.NotEmpty(await speaking); // the speech in progress finishes normally
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => engine.SynthesizeAsync("Hi.", new TtsOptions(), ct));
     }
 
     /// <summary>

@@ -49,6 +49,10 @@ namespace TTSFreeUse.Azure
         public async Task<float[]> SynthesizeAsync(string text, TtsOptions options,
             CancellationToken cancellationToken = default)
         {
+            if (!TtsOptions.IsValidSpeed(options.Speed))
+                throw new ArgumentOutOfRangeException(nameof(options), options.Speed,
+                    $"Speed must be between {TtsOptions.MinSpeed} and {TtsOptions.MaxSpeed}.");
+
             var config = SpeechConfig.FromSubscription(_key, _region);
             config.SpeechSynthesisVoiceName = options.Voice ?? DefaultVoice;
             config.SetSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Raw24Khz16BitMonoPcm);
@@ -72,10 +76,12 @@ namespace TTSFreeUse.Azure
 
         private static string BuildSsml(string text, string voice, float speed)
         {
-            var escaped = System.Security.SecurityElement.Escape(text);
+            // Both are escaped, so text can't add its own SSML instructions.
+            var escapedText = System.Security.SecurityElement.Escape(text);
+            var escapedVoice = System.Security.SecurityElement.Escape(voice);
             var rate = ((speed - 1.0f) * 100).ToString("+0;-0", System.Globalization.CultureInfo.InvariantCulture);
             return "<speak version=\"1.0\" xmlns=\"http://www.w3.org/2001/10/synthesis\" xml:lang=\"en-US\">" +
-                   $"<voice name=\"{voice}\"><prosody rate=\"{rate}%\">{escaped}</prosody></voice></speak>";
+                   $"<voice name=\"{escapedVoice}\"><prosody rate=\"{rate}%\">{escapedText}</prosody></voice></speak>";
         }
 
         private static float[] Pcm16ToFloat(byte[] pcm)

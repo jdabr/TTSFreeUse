@@ -24,7 +24,11 @@ namespace TTSFreeUse.Core.Extractors
 
             try
             {
-                return await extractor.ExtractAsync(stream);
+                return await OnLargeStack(() => extractor.ExtractAsync(stream));
+            }
+            catch (DocumentReadException)
+            {
+                throw; // already explained for the user
             }
             catch (ProtectedDocumentException ex)
             {
@@ -36,6 +40,35 @@ namespace TTSFreeUse.Core.Extractors
                 throw new DocumentReadException(
                     $"Couldn't read this {ext} file. It may be damaged or password-protected.", ex);
             }
+        }
+
+        // Measured: a PDF whose page list is nested ~5,000 levels deep overflows
+        // the normal 1 MB stack inside the PDF library; with 256 MB, a million
+        // levels parse (using ~2 GB of memory before the stack is the limit).
+        private const int ParserStackBytes = 256 * 1024 * 1024;
+
+        /// <summary>
+        /// Runs a document parser on its own thread with a large stack. Parsers
+        /// work through nested structures recursively, and a damaged or
+        /// malicious file can nest deeply enough to overflow a normal stack. A
+        /// stack overflow can't be caught: it would close TTSFreeUse, losing
+        /// any conversions in progress. The stack is reserved address space;
+        /// memory is only used as it's needed.
+        /// </summary>
+        private static Task<string> OnLargeStack(Func<Task<string>> parse)
+        {
+            var result = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var thread = new Thread(() =>
+            {
+                try { result.SetResult(parse().GetAwaiter().GetResult()); }
+                catch (Exception ex) { result.SetException(ex); }
+            }, ParserStackBytes)
+            {
+                IsBackground = true,
+                Name = "TTSFreeUse document reader",
+            };
+            thread.Start();
+            return result.Task;
         }
 
         private ITextExtractor? Find(string fileName)

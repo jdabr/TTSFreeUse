@@ -1,4 +1,7 @@
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using TTSFreeUse.Core.Audio;
 using TTSFreeUse.Core.Extractors;
 using TTSFreeUse.Core.Pipeline;
 using TTSFreeUse.Core.TTS;
@@ -103,9 +106,7 @@ namespace TTSFreeUse.Api.Controllers
                     "No readable text found. Scanned PDFs (images of pages) aren't supported yet.");
 
             // Write to a temp file rather than memory: long text is a lot of audio.
-            var path = Path.Combine(Path.GetTempPath(), $"ttsfreeuse-{Guid.NewGuid():N}.wav");
-            var output = new FileStream(path, FileMode.Create, FileAccess.ReadWrite, FileShare.None,
-                bufferSize: 81920, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+            var output = TempAudioFile.Create($"{Guid.NewGuid():N}.wav", FileOptions.DeleteOnClose | FileOptions.Asynchronous);
             try
             {
                 // Stops synthesizing if the user closes the page or cancels.
@@ -126,17 +127,24 @@ namespace TTSFreeUse.Api.Controllers
 
     public record PreparedText(string Title, IReadOnlyList<string> Passages);
 
-    internal static class RequestValidation
+    internal static partial class RequestValidation
     {
+        // Voice ids are short names: "af_heart", "en-US-JennyNeural".
+        [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$")]
+        private static partial Regex VoiceId();
+
         /// <summary>Returns an error response for invalid voice/speed or an engine that isn't ready.</summary>
         public static IActionResult? Check(ITtsEngine engine, string? voice, float speed)
         {
             if (!engine.IsReady)
                 return new ObjectResult(engine.Status) { StatusCode = StatusCodes.Status503ServiceUnavailable };
 
-            if (speed is < 0.5f or > 2.0f)
-                return new BadRequestObjectResult("Speed must be between 0.5 and 2.0.");
+            if (!TtsOptions.IsValidSpeed(speed))
+                return new BadRequestObjectResult(
+                    $"Speed must be a number from {TtsOptions.MinSpeed} to {TtsOptions.MaxSpeed}.");
 
+            if (voice != null && !VoiceId().IsMatch(voice))
+                return new BadRequestObjectResult("Unknown voice. See GET /api/speech/voices.");
             // Azure accepts any of its neural voice names; Kokoro only its own.
             if (voice != null && engine.Name == "kokoro" && engine.Voices.All(v => v.Id != voice))
                 return new BadRequestObjectResult($"Unknown voice '{voice}'. See GET /api/speech/voices.");

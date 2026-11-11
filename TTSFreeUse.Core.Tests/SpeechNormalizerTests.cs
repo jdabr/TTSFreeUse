@@ -130,6 +130,45 @@ public class PronunciationStoreTests
     }
 
     [Fact]
+    public void ANullEntryIsSkippedLikeABlankRow()
+    {
+        using var dir = new TempDir();
+        var store = new PronunciationStore(Path.Combine(dir.Path, "p.json"));
+
+        store.Replace(new PronunciationEntry[] { null!, new("NEC", "N E C") });
+
+        Assert.Equal("NEC", Assert.Single(store.Entries).Term);
+    }
+
+    [Fact]
+    public void AHandEditedFileWithNullEntriesStillLoads()
+    {
+        using var dir = new TempDir();
+        var path = Path.Combine(dir.Path, "p.json");
+        File.WriteAllText(path, """[null, {"Term": "NEC", "SayAs": "N E C"}, {"Term": null, "SayAs": null}]""");
+
+        var store = new PronunciationStore(path);
+
+        Assert.Null(store.LoadError);
+        Assert.Equal("NEC", Assert.Single(store.Entries).Term);
+    }
+
+    [Fact]
+    public void MatchCaseEntriesThatDifferOnlyInCapitalsAreBothKept()
+    {
+        using var dir = new TempDir();
+        var store = new PronunciationStore(Path.Combine(dir.Path, "p.json"));
+
+        store.Replace(new[]
+        {
+            new PronunciationEntry("US", "U S", MatchCase: true),
+            new PronunciationEntry("Us", "us", MatchCase: true),
+        });
+
+        Assert.Equal("U S and us", store.Apply("US and Us"));
+    }
+
+    [Fact]
     public void CorruptFileStartsEmptyWithAnError()
     {
         using var dir = new TempDir();
